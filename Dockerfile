@@ -1,0 +1,6 @@
+FROM node:18-alpine
+WORKDIR /app
+RUN npm init -y && npm install pg dotenv
+COPY updater.js .
+CMD ["node", "updater.js"]
+
