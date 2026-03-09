@@ -1,15 +1,28 @@
-immich-naver-reverse-geocoding은 Immich 셀프 호스팅 사용자를 위한 강력한 주소 최적화 도구입니다.
+# Immich Naver Reverse Geocoding Worker
 
-🛠 해결하고자 하는 문제
-Immich의 기본 역지오코딩은 OpenStreetMap(OSM) 데이터를 사용합니다. 이로 인해 한국 지명이 영어로 표시되거나, 어색한 번역체(예: 'Gyeonggi-do' 대신 '경기도'로만 표기되는 등), 혹은 상세 주소가 누락되는 경우가 많습니다.
+Immich의 사진 위치 정보(위도/경도)를 네이버 지도 API를 사용하여 한글 주소로 자동 변환해주는 도커 서비스입니다.
 
-🚀 주요 특징
-네이버 지도 API 활용: 대한민국에서 가장 정확한 네이버 지적 데이터를 사용하여 '시/군/구/읍/면/동' 단위의 깔끔한 한글 주소를 제공합니다.
+## ✨ 주요 기능
+- **정확한 한글 지명**: OpenStreetMap 기반의 부정확한 한글 지명을 네이버 API 기반의 표준 지명으로 교체합니다.
+- **자동 스케줄링**: 설정한 주기(기본 24시간)마다 새로운 사진을 감지하여 업데이트합니다.
 
-실전 검증된 안정성: 15만 장 이상의 대규모 사진 라이브러리에서 직접 성능 및 API 안정성을 테스트 완료했습니다.
+## 🚀 시작하기
 
-지능형 스캔: 이미 변환된 사진은 건너뛰고, 새로 추가된 사진이나 주소가 없는 사진만 골라내어 서버 자원을 아낍니다.
+### 1. 네이버 API 키 발급
+- [Naver Cloud Platform](https://www.ncloud.com/)에서 'Maps' 서비스를 신청하고 `Client ID`와 `Client Secret`을 발급받으세요.
 
-심리스한 통합: 기존 Immich의 Docker Compose 환경에 컨테이너 하나만 추가하면 즉시 작동하며, 원본 파일은 건드리지 않고 DB의 메타데이터만 안전하게 업데이트합니다.
+### 2. Docker Compose 설정
+`docker-compose.yml` 파일에 아래 서비스를 추가합니다.
 
-자동 스케줄링: 24시간 주기로 백그라운드에서 조용히 실행되어 사용자의 개입이 필요 없습니다.
+```yaml
+  naver-geocoding:
+    image: node:18-alpine
+    container_name: naver_geocoding
+    working_dir: /app
+    volumes:
+      - ./naver-reverse-geocoding:/app
+      - ./.env:/app/.env:ro
+    command: sh -c "npm init -y && npm install pg dotenv && node updater.js"
+    restart: always
+    depends_on:
+      - immich-postgres
