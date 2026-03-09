@@ -1,28 +1,14 @@
-<<<<<<< HEAD
+# 1. 가볍고 안정적인 Node.js 18 알프레인 버전을 기반으로 합니다.
 FROM node:18-alpine
+
+# 2. 컨테이너 내 작업 디렉토리를 /app으로 설정합니다.
 WORKDIR /app
+
+# 3. 별도의 package.json 파일 없이도 실행 시 필요한 라이브러리(pg, dotenv)를 설치합니다.
 RUN npm init -y && npm install pg dotenv
-COPY updater.js .
-CMD ["node", "updater.js"]
 
-=======
-# 1. 가벼운 Node.js Alpine 이미지 사용
-FROM node:18-alpine
-
-# 2. 작업 디렉토리 설정
-WORKDIR /app
-
-# 3. 패키지 파일 복사 및 설치 (캐싱 활용)
-COPY package*.json ./
-RUN npm install --production
-
-# 4. 소스 코드 복사
+# 4. 작성한 소스코드(updater.js)를 컨테이너 내부로 복사합니다.
 COPY updater.js ./
 
-# 5. 실행 환경 설정
-# 도커 환경에서 로그가 즉시 출력되도록 설정
-ENV NODE_ENV=production
-
-# 6. 실행 명령
+# 5. 노드 실행 명령어를 입력합니다.
 CMD ["node", "updater.js"]
->>>>>>> 7331ebf1ce1c3c052116dde29bddbdca02d3ff29
