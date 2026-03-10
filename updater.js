@@ -1,8 +1,9 @@
 require('dotenv').config({ path: '/app/.env' });
 const { Client } = require('pg');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
-// [설정값 로드]
 const config = {
     naverId: (process.env.NAVER_CLIENT_ID || '').trim(),
     naverSecret: (process.env.NAVER_CLIENT_SECRET || '').trim(),
@@ -13,46 +14,57 @@ const config = {
         database: (process.env.DB_DATABASE_NAME || 'immich').trim(),
         port: 5432,
     },
-    // 실행 주기 (기본 24시간)
     interval: parseInt(process.env.INTERVAL_HOURS || '24') * 60 * 60 * 1000,
-    // 사진당 지연 시간 (기본 0.1초)
     delay: parseInt(process.env.STEP_DELAY_MS || '100')
 };
 
-/**
- * 네이버 역지오코딩 API 호출 함수
- */
+const isForceMode = process.argv.includes('--force');
+let locationMap = {};
+
+try {
+    const mappingPath = path.join(__dirname, 'mapping.json');
+    if (fs.existsSync(mappingPath)) {
+        locationMap = JSON.parse(fs.readFileSync(mappingPath, 'utf8'));
+    } else {
+        console.warn("⚠️ [경고] mapping.json 파일이 존재하지 않습니다. 네이버 API만 단독 사용합니다.");
+    }
+} catch (e) {
+    console.error("❌ [오류] mapping.json을 파싱할 수 없습니다.");
+}
+
+function translateLocation(engName) {
+    if (!engName) return null;
+    const lowerEng = engName.toLowerCase();
+    for (const [eng, kor] of Object.entries(locationMap)) {
+        if (lowerEng.includes(eng.toLowerCase())) return kor;
+    }
+    return null;
+}
+
 function getNaverAddress(lat, lon) {
     return new Promise((resolve) => {
         const url = `https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc?coords=${lon},${lat}&output=json&orders=admcode,roadaddr`;
         const options = {
-            headers: {
-                'x-ncp-apigw-api-key-id': config.naverId,
-                'x-ncp-apigw-api-key': config.naverSecret
-            }
+            headers: { 'x-ncp-apigw-api-key-id': config.naverId, 'x-ncp-apigw-api-key': config.naverSecret }
         };
         https.get(url, options, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                if (res.statusCode === 200) {
-                    try {
+                try {
+                    if (res.statusCode === 200) {
                         const parsed = JSON.parse(data);
                         if (parsed.status.code === 0 && parsed.results.length > 0) {
                             const region = parsed.results[0].region;
-                            const state = region.area1.name;     // 도/특별시/광역시
-                            const city = region.area2.name;      // 시/군/구
-                            const town = region.area3.name;      // 읍/면/동
-                            resolve({ state, city: `${city} ${town}`.trim() });
-                        } else {
-                            resolve(null);
+                            resolve({ 
+                                state: region.area1.name, 
+                                city: `${region.area2.name} ${region.area3.name}`.trim() 
+                            });
+                            return;
                         }
-                    } catch (e) {
-                        resolve(null);
                     }
-                } else {
-                    resolve(null); 
-                }
+                    resolve(null);
+                } catch (e) { resolve(null); }
             });
         }).on('error', () => resolve(null));
     });
@@ -60,71 +72,72 @@ function getNaverAddress(lat, lon) {
 
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
-/**
- * 메인 업데이트 로직
- */
-async function main() {
+async function main(forceUpdate = false) {
     const client = new Client(config.db);
     try {
         await client.connect();
         
-        // 🎯 대한민국 좌표 필터링 (Geofencing) 적용
-        const query = `
-            SELECT "assetId", "latitude", "longitude" 
-            FROM "asset_exif" 
-            WHERE "latitude" BETWEEN 33 AND 43 
-              AND "longitude" BETWEEN 124 AND 132
-              AND ("country" != '대한민국' OR "country" IS NULL OR "city" !~ '[가-힣]');
-        `;
+        let queryCondition = `WHERE "latitude" BETWEEN 33 AND 43 AND "longitude" BETWEEN 124 AND 132`;
+        if (!forceUpdate) {
+            queryCondition += ` AND ("country" != '대한민국' OR "country" IS NULL OR "city" IS NULL OR "city" !~ '[가-힣]')`;
+        }
 
+        const query = `SELECT "assetId", "latitude", "longitude", "country", "city", "state" FROM "asset_exif" ${queryCondition};`;
         const res = await client.query(query);
-        const rows = res.rows;
         
-        console.log(`[${new Date().toISOString()}] 🔍 국내 사진 스캔 완료: 총 ${rows.length}장 업데이트 필요`);
+        console.log(`[${new Date().toISOString()}] 🔍 스캔 완료: 총 ${res.rows.length}장 업데이트 대상 발견`);
 
         let updatedCount = 0;
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
+        for (const row of res.rows) {
             try {
-                const address = await getNaverAddress(row.latitude, row.longitude);
-                if (address) {
-                    const updateQuery = `
-                        UPDATE "asset_exif" 
-                        SET "country" = '대한민국', "state" = $1, "city" = $2 
-                        WHERE "assetId" = $3
-                    `;
-                    await client.query(updateQuery, [address.state, address.city, row.assetId]);
-                    updatedCount++;
-
-                    // 1,000장 단위로 진행 로그 출력
-                    if (updatedCount % 1000 === 0) {
-                        console.log(`⏳ 진행 중: ${updatedCount}장 완료...`);
+                let address = await getNaverAddress(row.latitude, row.longitude);
+                
+                if (!address) {
+                    const korState = translateLocation(row.state);
+                    const korCity = translateLocation(row.city);
+                    
+                    if (korState || korCity) {
+                        address = { state: korState || '대한민국', city: korCity ? `${korCity} 해상` : '해상' };
+                    } else {
+                        // 🛡️ 안전장치: 원본 메타데이터가 한국일 경우에만 '해상' 처리 (해외 데이터 보호)
+                        const originalCountry = row.country ? row.country.toLowerCase() : '';
+                        if (originalCountry.includes('korea') || originalCountry === '대한민국') {
+                            address = { state: '대한민국', city: '해상' };
+                        } else {
+                            address = null; 
+                        }
                     }
                 }
-            } catch (err) {
-                // 에러 발생 시 건너뜀
-            }
+
+                if (address) {
+                    await client.query(
+                        `UPDATE "asset_exif" SET "country" = '대한민국', "state" = $1, "city" = $2 WHERE "assetId" = $3`,
+                        [address.state, address.city, row.assetId]
+                    );
+                    updatedCount++;
+                    if (updatedCount % 500 === 0) console.log(`⏳ 처리 중: ${updatedCount}장 완료...`);
+                }
+            } catch (err) {}
             await sleep(config.delay); 
         }
 
-        if (updatedCount > 0) {
-            console.log(`[${new Date().toISOString()}] 🎉 작업 완료! 총 ${updatedCount}장의 주소를 업데이트했습니다.`);
-        } else {
-            console.log(`[${new Date().toISOString()}] ✨ 모든 국내 사진 주소가 최신 상태입니다.`);
-        }
-
+        console.log(`[${new Date().toISOString()}] 🎉 작업 완료: 총 ${updatedCount}장의 주소 업데이트 완료`);
     } catch (err) {
-        console.error("❌ 에러 발생:", err.message);
+        console.error("❌ [DB 에러]", err.message);
     } finally {
         await client.end();
     }
 }
 
-console.log(`================================================`);
-console.log(`🚀 Immich Naver Geocoding Worker 가동`);
-console.log(`📍 대상 범위: 대한민국 영토 내 좌표 (Lat 33-43, Lon 124-132)`);
-console.log(`⏰ 실행 주기: ${process.env.INTERVAL_HOURS || '24'}시간`);
-console.log(`================================================`);
-
-main();
-setInterval(main, config.interval);
+if (isForceMode) {
+    console.log(`================================================`);
+    console.log(`🛠️ 수동 강제 업데이트 모드 가동 (--force)`);
+    console.log(`================================================`);
+    main(true).then(() => process.exit(0));
+} else {
+    console.log(`================================================`);
+    console.log(`🚀 Immich Naver Geocoding Worker 시작됨`);
+    console.log(`================================================`);
+    main(false);
+    setInterval(() => main(false), config.interval);
+}
