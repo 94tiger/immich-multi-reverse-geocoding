@@ -13,7 +13,7 @@
 1. **[1순위] 네이버 역지오코딩 API:** 육지 좌표를 "시/도 + 시/군/구 + 읍/면/동" 단위로 가장 정확하게 변환합니다.
 2. **[2순위] 지명 매핑 사전 (`mapping.json`):** 네이버 API 결과가 없는 지역(바다 등)에서 기존 영문 지명을 매핑 사전에 따라 **순수 한글 지명으로 1:1 번역**합니다. (OSM의 행정구역 꼬리 자르기 대응 알고리즘 탑재)
 
-**🛡️ 데이터 보호 원칙:** 확실한 번역 근거가 없거나 해외(일본 등) 좌표로 판단될 경우, **기존 메타데이터를 절대 수정하지 않고 스킵(Skip)**하여 데이터 무결성을 보장합니다. '대한민국 해상' 등 추측성 명칭을 강제로 부여하지 않습니다.
+**🛡️ 데이터 보호 원칙:** 확실한 번역 근거가 없거나 해외(일본 등) 좌표로 판단될 경우, **기존 메타데이터를 절대 수정하지 않고 스킵(Skip)**하여 데이터 무결성을 보장합니다.
 
 ---
 
@@ -30,7 +30,7 @@
 ### 2. 저장소 클론 (Clone)
 Immich가 설치된 메인 폴더(예: `/docker/immich/`)에서 저장소를 다운로드하고 폴더로 진입합니다.
 ```bash
-git clone [https://github.com/lscya84/immich-naver-reverse-geocoding.git](https://github.com/lscya84/immich-naver-reverse-geocoding.git)
+git clone https://github.com/lscya84/immich-naver-reverse-geocoding.git
 cd immich-naver-reverse-geocoding
 ```
 
