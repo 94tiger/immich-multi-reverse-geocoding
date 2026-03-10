@@ -25,12 +25,8 @@ try {
     const mappingPath = path.join(__dirname, 'mapping.json');
     if (fs.existsSync(mappingPath)) {
         locationMap = JSON.parse(fs.readFileSync(mappingPath, 'utf8'));
-    } else {
-        console.warn("⚠️ [경고] mapping.json 파일이 존재하지 않습니다. 네이버 API만 단독 사용합니다.");
     }
-} catch (e) {
-    console.error("❌ [오류] mapping.json을 파싱할 수 없습니다.");
-}
+} catch (e) {}
 
 function translateLocation(engName) {
     if (!engName) return null;
@@ -85,7 +81,7 @@ async function main(forceUpdate = false) {
         const query = `SELECT "assetId", "latitude", "longitude", "country", "city", "state" FROM "asset_exif" ${queryCondition};`;
         const res = await client.query(query);
         
-        console.log(`[${new Date().toISOString()}] 🔍 스캔 완료: 총 ${res.rows.length}장 업데이트 대상 발견`);
+        console.log(`[${new Date().toISOString()}] 🔍 스캔 시작: 총 ${res.rows.length}장 대상`);
 
         let updatedCount = 0;
         for (const row of res.rows) {
@@ -96,16 +92,9 @@ async function main(forceUpdate = false) {
                     const korState = translateLocation(row.state);
                     const korCity = translateLocation(row.city);
                     
+                    // 지명 정보가 매핑 사전에 존재할 때만 순수하게 번역된 주소 사용
                     if (korState || korCity) {
-                        address = { state: korState || '대한민국', city: korCity ? `${korCity} 해상` : '해상' };
-                    } else {
-                        // 🛡️ 안전장치: 원본 메타데이터가 한국일 경우에만 '해상' 처리 (해외 데이터 보호)
-                        const originalCountry = row.country ? row.country.toLowerCase() : '';
-                        if (originalCountry.includes('korea') || originalCountry === '대한민국') {
-                            address = { state: '대한민국', city: '해상' };
-                        } else {
-                            address = null; 
-                        }
+                        address = { state: korState || row.state, city: korCity || row.city };
                     }
                 }
 
@@ -115,13 +104,12 @@ async function main(forceUpdate = false) {
                         [address.state, address.city, row.assetId]
                     );
                     updatedCount++;
-                    if (updatedCount % 500 === 0) console.log(`⏳ 처리 중: ${updatedCount}장 완료...`);
+                    if (updatedCount % 500 === 0) console.log(`⏳ 진행 중: ${updatedCount}장 완료...`);
                 }
             } catch (err) {}
             await sleep(config.delay); 
         }
-
-        console.log(`[${new Date().toISOString()}] 🎉 작업 완료: 총 ${updatedCount}장의 주소 업데이트 완료`);
+        console.log(`[${new Date().toISOString()}] 🎉 작업 완료: 총 ${updatedCount}장 업데이트됨`);
     } catch (err) {
         console.error("❌ [DB 에러]", err.message);
     } finally {
@@ -130,14 +118,8 @@ async function main(forceUpdate = false) {
 }
 
 if (isForceMode) {
-    console.log(`================================================`);
-    console.log(`🛠️ 수동 강제 업데이트 모드 가동 (--force)`);
-    console.log(`================================================`);
     main(true).then(() => process.exit(0));
 } else {
-    console.log(`================================================`);
-    console.log(`🚀 Immich Naver Geocoding Worker 시작됨`);
-    console.log(`================================================`);
     main(false);
     setInterval(() => main(false), config.interval);
 }
