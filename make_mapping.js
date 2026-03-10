@@ -1,7 +1,7 @@
 const fs = require('fs');
 
 try {
-    const csv = fs.readFileSync('./admin.csv', 'utf8');
+    const csv = fs.readFileSync('./mapping.csv', 'utf8');
     const lines = csv.split(/\r?\n/);
     
     // 글로벌 해역 및 특수 지명 수동 매핑
@@ -47,5 +47,5 @@ try {
     console.log(`✅ [생성 완료] 총 ${Object.keys(mapping).length}개의 지명 매핑 사전(mapping.json)이 준비되었습니다.`);
     
 } catch (err) {
-    console.error('❌ [오류] admin.csv 파일을 읽을 수 없습니다.', err.message);
+    console.error('❌ [오류]mapping.csv 파일을 읽을 수 없습니다.', err.message);
 }
