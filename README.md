@@ -1,6 +1,6 @@
 # 🌍 Immich 지능형 한국어 역지오코딩 워커 (Naver API + OSM Hybrid)
 
-[Immich](https://immich.app/)의 자체 역지오코딩(OSM)이 가진 한계(해상 좌표 누락, 행정구역 생략 등)를 극복하기 위해 제작된 **하이브리드 역지오코딩 스케줄러**입니다. 네이버 API와 통계청 공공데이터를 결합하여 해외 주소는 보존하면서 한국의 모든 영토와 바다를 100% 한글화합니다.
+[Immich](https://immich.app/)의 자체 역지오코딩(OSM)이 가진 한계(해상 좌표 누락, 행정구역 생략 등)를 완벽하게 극복하기 위해 제작된 **하이브리드 역지오코딩 스케줄러**입니다. 네이버 API와 통계청 공공데이터를 결합하여 해외 주소는 보존하면서 한국의 모든 영토와 바다를 100% 한글화합니다.
 
 ---
 
@@ -16,14 +16,25 @@
 
 ## 🚀 설치 및 세팅 방법
 
-### 1. 저장소 클론 (Clone)
+### 1. 네이버 클라우드 API 키 발급 (ID/Secret)
+네이버 역지오코딩 서비스를 이용하기 위해 API 키가 필요합니다. (무료 한도 제공)
+
+1. [네이버 클라우드 플랫폼 콘솔](https://console.ncloud.com/)에 접속하여 로그인합니다.
+2. 좌측 메뉴에서 **Services** > **AI·NAVER API** > **AI·NAVER API**를 클릭합니다.
+3. **Application 등록** 버튼을 누릅니다.
+4. **Application 이름**을 입력(예: `Immich-Geocoding`)하고, 서비스 선택에서 **Maps** 하위의 **Reverse Geocoding**을 체크합니다.
+5. 하단의 **서비스 URL**에 본인의 Immich 접속 주소를 입력합니다. (예: `http://192.168.0.10:2283`, 내부망 주소도 가능)
+6. 등록 완료 후, 목록에서 생성된 Application의 **인증 정보** 버튼을 클릭합니다.
+7. **Client ID**와 **Client Secret** 값을 복사하여 메모해 둡니다.
+
+### 2. 저장소 클론 (Clone)
 Immich가 설치된 메인 폴더(예: `/docker/immich/`)로 이동하여 저장소를 다운로드합니다.
 ```bash
 git clone [https://github.com/lscya84/immich-naver-reverse-geocoding.git](https://github.com/lscya84/immich-naver-reverse-geocoding.git)
 cd immich-naver-reverse-geocoding
 ```
 
-### 2. 매핑 사전 데이터 준비 (`mapping.csv`)
+### 3. 매핑 사전 데이터 준비 (`mapping.csv`)
 1. [통계분류포털(KSSC)](https://kssc.kostat.go.kr/) 접속 -> **한국행정구역분류** 게시판에서 최신 `.xlsx` 파일 다운로드.
 2. **`2. 항목표(기준시점)`** 시트를 **`CSV (쉼표로 분리)`** 형식으로 저장.
 3. 파일명을 **`mapping.csv`**로 변경하여 `immich-naver-reverse-geocoding` 폴더 안에 넣습니다.
@@ -32,32 +43,35 @@ cd immich-naver-reverse-geocoding
 node make_mapping.js
 ```
 
-### 3. 환경 변수 (`.env`) 설정 추가
-**Immich 메인 폴더의 `.env` 파일** 하단에 아래 내용을 추가합니다.
+### 4. 환경 변수 (`.env`) 설정 추가
+**Immich 메인 폴더의 `.env` 파일** 하단에 발급받은 API 키 정보를 추가합니다.
 ```env
 # Naver Reverse Geocoding 설정
-NAVER_CLIENT_ID=본인의_클라이언트_ID
-NAVER_CLIENT_SECRET=본인의_클라이언트_시크릿
+NAVER_CLIENT_ID=위에서_복사한_ID
+NAVER_CLIENT_SECRET=위에서_복사한_Secret
 INTERVAL_HOURS=24
 STEP_DELAY_MS=100
 ```
 
-### 4. docker-compose.yml 수정
+### 5. docker-compose.yml 수정
 Immich 메인 폴더의 `docker-compose.yml` 파일 `services:` 항목 아래에 다음 내용을 추가합니다.
 ```yaml
+  # [추가] 네이버 역지오코딩 자동 업데이트 워커
   immich-naver-reverse-geocoding:
     container_name: immich_naver_reverse_geocoding
     build: ./immich-naver-reverse-geocoding
     restart: always
     volumes:
+      # Immich 메인 .env를 읽어옵니다.
       - ./.env:/app/.env:ro
     environment:
+      # 본인의 postgres 서비스 이름과 일치시켜야 합니다.
       - DB_HOSTNAME=immich_postgres
     depends_on:
       - immich_postgres
 ```
 
-### 5. 컨테이너 빌드 및 실행
+### 6. 컨테이너 빌드 및 실행
 ```bash
 docker compose up -d --build immich-naver-reverse-geocoding
 ```
@@ -74,7 +88,6 @@ docker compose up -d --build immich-naver-reverse-geocoding
 ```bash
 docker compose exec immich-naver-reverse-geocoding node updater.js --force
 ```
-> **⚠️ 주의:** 네이버 API 요금 한도에 유의하여 필요할 때만 수동으로 사용하세요.
 
 ---
 
