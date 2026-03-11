@@ -28,18 +28,30 @@ try {
     }
 } catch (e) {}
 
-// 지명 번역 (단순 포함이 아닌 전체 일치 또는 정규식 활용)
+/**
+ * 지명 번역 로직 강화: 과잉 매핑 방지
+ */
 function translateLocation(engName) {
     if (!engName) return null;
-    const cleanName = engName.replace(/-(do|si|gun|gu|eup|myeon|dong|ri)$/i, '').trim().toLowerCase();
     
-    // 1. 전체 일치 우선 확인
+    // 1. 표준화: 소문자 변환 및 접미사(-si, -do 등) 제거 버전 준비
+    const original = engName.toLowerCase().trim();
+    const clean = original.replace(/-(do|si|gun|gu|eup|myeon|dong|ri)$/i, '').trim();
+    
+    // 2. [1순위] 전체 일치 확인 (가장 정확함)
+    if (locationMap[original]) return locationMap[original];
+    if (locationMap[clean]) return locationMap[clean];
+
+    // 3. [2순위] 반복문을 돌되, '포함'이 아니라 '정확한 단어 경계' 확인
     for (const [eng, kor] of Object.entries(locationMap)) {
-        if (eng.toLowerCase() === cleanName || eng.toLowerCase() === engName.toLowerCase()) {
+        const key = eng.toLowerCase();
+        // 단어가 완전히 일치하거나, '-'로 구분된 단어 중 하나가 일치할 때만 허용
+        if (original === key || original.split('-').includes(key)) {
             return kor;
         }
     }
-    return null;
+    
+    return null; // 불확실하면 원본 영문을 그대로 유지 (잘못된 한글보다 영문이 나음)
 }
 
 function getNaverAddress(lat, lon) {
@@ -96,21 +108,12 @@ async function main(forceUpdate = false) {
                 let address = await getNaverAddress(row.latitude, row.longitude);
                 
                 if (!address) {
-                    // 🌊 해상/예외 데이터 처리 로직
                     const korState = translateLocation(row.state);
                     const korCity = translateLocation(row.city);
                     
                     if (korState || korCity) {
-                        // [핵심 수정] 정보를 억지로 합치지 않고, 가장 구체적인 정보 하나만 사용하거나 '해상'임을 명시
-                        // 만약 번역된 지명이 '동해', '서해' 등 바다 이름이면 그대로 사용
-                        const isSea = (korState + korCity).match(/(해|해협|대양|독도)/);
-                        
-                        if (isSea) {
-                            address = { state: '대한민국', city: korCity || korState };
-                        } else {
-                            // 바다 한가운데인데 '시/구' 이름만 검색된다면 데이터 신뢰도가 낮으므로 업데이트 스킵
-                            address = null; 
-                        }
+                        // 정보가 존재할 때만 업데이트하되, 영문보다 나은 정보일 때만 수행
+                        address = { state: korState || row.state, city: korCity || row.city };
                     }
                 }
 
