@@ -28,11 +28,16 @@ try {
     }
 } catch (e) {}
 
+// 지명 번역 (단순 포함이 아닌 전체 일치 또는 정규식 활용)
 function translateLocation(engName) {
     if (!engName) return null;
-    const lowerEng = engName.toLowerCase();
+    const cleanName = engName.replace(/-(do|si|gun|gu|eup|myeon|dong|ri)$/i, '').trim().toLowerCase();
+    
+    // 1. 전체 일치 우선 확인
     for (const [eng, kor] of Object.entries(locationMap)) {
-        if (lowerEng.includes(eng.toLowerCase())) return kor;
+        if (eng.toLowerCase() === cleanName || eng.toLowerCase() === engName.toLowerCase()) {
+            return kor;
+        }
     }
     return null;
 }
@@ -74,8 +79,10 @@ async function main(forceUpdate = false) {
         await client.connect();
         
         let queryCondition = `WHERE "latitude" BETWEEN 33 AND 43 AND "longitude" BETWEEN 124 AND 132`;
+        queryCondition += ` AND ("country" IN ('South Korea', '대한민국', 'Korea'))`;
+
         if (!forceUpdate) {
-            queryCondition += ` AND ("country" != '대한민국' OR "country" IS NULL OR "city" IS NULL OR "city" !~ '[가-힣]')`;
+            queryCondition += ` AND ("city" IS NULL OR "city" !~ '[가-힣]')`;
         }
 
         const query = `SELECT "assetId", "latitude", "longitude", "country", "city", "state" FROM "asset_exif" ${queryCondition};`;
@@ -89,12 +96,21 @@ async function main(forceUpdate = false) {
                 let address = await getNaverAddress(row.latitude, row.longitude);
                 
                 if (!address) {
+                    // 🌊 해상/예외 데이터 처리 로직
                     const korState = translateLocation(row.state);
                     const korCity = translateLocation(row.city);
                     
-                    // 지명 정보가 매핑 사전에 존재할 때만 순수하게 번역된 주소 사용
                     if (korState || korCity) {
-                        address = { state: korState || row.state, city: korCity || row.city };
+                        // [핵심 수정] 정보를 억지로 합치지 않고, 가장 구체적인 정보 하나만 사용하거나 '해상'임을 명시
+                        // 만약 번역된 지명이 '동해', '서해' 등 바다 이름이면 그대로 사용
+                        const isSea = (korState + korCity).match(/(해|해협|대양|독도)/);
+                        
+                        if (isSea) {
+                            address = { state: '대한민국', city: korCity || korState };
+                        } else {
+                            // 바다 한가운데인데 '시/구' 이름만 검색된다면 데이터 신뢰도가 낮으므로 업데이트 스킵
+                            address = null; 
+                        }
                     }
                 }
 
