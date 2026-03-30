@@ -2,7 +2,25 @@
 
 [Immich](https://immich.app/)의 자체 역지오코딩(OSM)이 가진 한계(불완전한 한국어 주소, 지명 생략 등)를 해결하기 위한 **하이브리드 역지오코딩 스케줄러**입니다. 네이버 API와 통계청 공공데이터 기반의 매핑 사전을 결합하여, 해외 주소는 보존하면서 한국의 모든 영토를 가장 안전하고 정확하게 한글화합니다.
 
+## 📦 릴리즈 / 변경 이력
 
+- **Latest Release:** [v1.1.0 업데이트 릴리즈](https://github.com/lscya84/immich-naver-reverse-geocoding/releases/tag/v1.1.0)
+- **Initial Release:** [v1.0.0 초기 릴리즈](https://github.com/lscya84/immich-naver-reverse-geocoding/releases/tag/v1.0.0)
+- **전체 릴리즈 보기:** [GitHub Releases](https://github.com/lscya84/immich-naver-reverse-geocoding/releases)
+- **커밋 변경 이력:** [GitHub Commits](https://github.com/lscya84/immich-naver-reverse-geocoding/commits/main)
+
+### 버전 요약
+
+- **v1.0.0**
+  - 대한민국 좌표 대상 한글 역지오코딩 기본 구조
+  - 네이버 Reverse Geocoding + `mapping.json` 하이브리드 보정
+  - 해외 데이터 오염 방지 중심의 안전한 초기 릴리즈
+- **v1.1.0**
+  - 메모리/DB 캐시 도입 및 TTL 관리
+  - Fast Track / API Track 2단계 분리 처리
+  - API Track 좌표 그룹화로 중복 API 호출 최소화
+  - 실제 API 호출 그룹에만 지연 적용
+  - UUID 비교 오류 수정 및 로그/README 보강
 
 ---
 
