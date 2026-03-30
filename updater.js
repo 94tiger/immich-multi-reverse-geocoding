@@ -21,11 +21,14 @@ const config = {
 const isForceMode = process.argv.includes('--force');
 let locationMap = {};
 
-// [캐시 설정] 메모리 보호를 위한 최대 크기 제한
+// L1 캐시 (메모리)
 const addressCache = new Map();
 const MAX_CACHE_SIZE = 50000;
 
-// [안전장치] 중복 실행 방지용 자물쇠(Lock)
+// L2 캐시 (DB) 유효기간
+const CACHE_TTL_DAYS = 180;
+
+// 중복 실행 방지용 Lock
 let isRunning = false;
 
 try {
@@ -37,6 +40,7 @@ try {
 
 function translateLocation(engName) {
     if (!engName) return null;
+
     const original = engName.toLowerCase().trim();
     const clean = original.replace(/-(do|si|gun|gu|eup|myeon|dong|ri)$/i, '').trim();
 
@@ -47,19 +51,35 @@ function translateLocation(engName) {
         const key = eng.toLowerCase();
         if (original === key || original.split('-').includes(key)) return kor;
     }
+
     return null;
 }
 
-function getNaverAddress(lat, lon) {
+function getCacheKey(lat, lon) {
+    return `${parseFloat(lat).toFixed(5)}_${parseFloat(lon).toFixed(5)}`;
+}
+
+function setMemoryCache(cacheKey, value) {
+    if (addressCache.size >= MAX_CACHE_SIZE) {
+        const firstKey = addressCache.keys().next().value;
+        addressCache.delete(firstKey);
+    }
+    addressCache.set(cacheKey, value);
+}
+
+async function ensureCacheTable(client) {
+    await client.query(`
+        CREATE TABLE IF NOT EXISTS "custom_naver_geocode_cache" (
+            "cache_key" VARCHAR PRIMARY KEY,
+            "state" VARCHAR,
+            "city" VARCHAR,
+            "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+}
+
+function fetchNaverAddress(lat, lon) {
     return new Promise((resolve) => {
-        // 건물명 매칭 정확도를 위해 소수점 5자리(약 1.1m 오차) 기준으로 캐시
-        const cacheKey = `${parseFloat(lat).toFixed(5)}_${parseFloat(lon).toFixed(5)}`;
-
-        // 1. 캐시 적중 시 API 호출 없이 즉시 반환
-        if (addressCache.has(cacheKey)) {
-            return resolve({ ...addressCache.get(cacheKey), fromCache: true });
-        }
-
         const url = `https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc?coords=${lon},${lat}&output=json&orders=admcode,roadaddr,addr`;
         const options = {
             headers: {
@@ -70,60 +90,111 @@ function getNaverAddress(lat, lon) {
 
         https.get(url, options, (res) => {
             let data = '';
+
             res.on('data', (chunk) => {
                 data += chunk;
             });
+
             res.on('end', () => {
                 try {
-                    if (res.statusCode === 200) {
-                        const parsed = JSON.parse(data);
-                        if (parsed.status.code === 0 && parsed.results.length > 0) {
-                            const admResult = parsed.results.find((r) => r.name === 'admcode') || parsed.results[0];
-                            const region = admResult.region;
+                    if (res.statusCode !== 200) {
+                        resolve(null);
+                        return;
+                    }
 
-                            const stateName = region.area1?.name || '';
-                            const area2 = region.area2?.name || '';
-                            const area3 = region.area3?.name || '';
-                            const area4 = region.area4?.name || '';
+                    const parsed = JSON.parse(data);
+                    if (parsed.status?.code !== 0 || !Array.isArray(parsed.results) || parsed.results.length === 0) {
+                        resolve(null);
+                        return;
+                    }
 
-                            const cityParts = [area2, area3, area4].filter((part) => part && part.trim() !== '');
-                            let cityName = cityParts.join(' ');
+                    const admResult = parsed.results.find((r) => r.name === 'admcode') || parsed.results[0];
+                    const region = admResult.region;
 
-                            let buildingName = '';
-                            const roadResult = parsed.results.find((r) => r.name === 'roadaddr');
+                    const stateName = region.area1?.name || '';
+                    const area2 = region.area2?.name || '';
+                    const area3 = region.area3?.name || '';
+                    const area4 = region.area4?.name || '';
 
-                            // 하드코딩 필터 없이 유효한 문자열인지 정도만 검증
-                            if (roadResult?.land?.addition0?.value) {
-                                const rawBuildingName = roadResult.land.addition0.value.trim();
-                                if (rawBuildingName.length >= 2 && Number.isNaN(Number(rawBuildingName))) {
-                                    buildingName = rawBuildingName;
-                                }
-                            }
+                    const cityParts = [area2, area3, area4].filter((part) => part && part.trim() !== '');
+                    let cityName = cityParts.join(' ');
 
-                            if (buildingName) {
-                                cityName = `${cityName} (${buildingName})`.trim();
-                            }
+                    let buildingName = '';
+                    const roadResult = parsed.results.find((r) => r.name === 'roadaddr');
 
-                            const result = { state: stateName, city: cityName };
-
-                            // 2. 캐시 저장 (최대치 도달 시 가장 오래된 키 제거)
-                            if (addressCache.size >= MAX_CACHE_SIZE) {
-                                const firstKey = addressCache.keys().next().value;
-                                addressCache.delete(firstKey);
-                            }
-                            addressCache.set(cacheKey, result);
-
-                            resolve({ ...result, fromCache: false });
-                            return;
+                    // 하드코딩 블랙리스트 없이 길이와 숫자 여부만 판별
+                    if (roadResult?.land?.addition0?.value) {
+                        const rawBuildingName = roadResult.land.addition0.value.trim();
+                        if (rawBuildingName.length >= 2 && Number.isNaN(Number(rawBuildingName))) {
+                            buildingName = rawBuildingName;
                         }
                     }
-                    resolve(null);
+
+                    if (buildingName) {
+                        cityName = `${cityName} (${buildingName})`.trim();
+                    }
+
+                    resolve({ state: stateName, city: cityName });
                 } catch (e) {
                     resolve(null);
                 }
             });
         }).on('error', () => resolve(null));
     });
+}
+
+async function getNaverAddress(client, lat, lon) {
+    const cacheKey = getCacheKey(lat, lon);
+
+    // 1순위: L1 메모리 캐시
+    if (addressCache.has(cacheKey)) {
+        return { ...addressCache.get(cacheKey), fromCache: 'memory' };
+    }
+
+    // 2순위: L2 DB 캐시 (TTL 180일)
+    try {
+        const cacheRes = await client.query(
+            `SELECT "state", "city"
+             FROM "custom_naver_geocode_cache"
+             WHERE "cache_key" = $1
+               AND "updated_at" >= CURRENT_TIMESTAMP - ($2 * INTERVAL '1 day')
+             LIMIT 1`,
+            [cacheKey, CACHE_TTL_DAYS],
+        );
+
+        if (cacheRes.rows.length > 0) {
+            const cachedAddress = {
+                state: cacheRes.rows[0].state,
+                city: cacheRes.rows[0].city,
+            };
+            setMemoryCache(cacheKey, cachedAddress);
+            return { ...cachedAddress, fromCache: 'db' };
+        }
+    } catch (e) {
+        // DB 캐시 조회 실패 시에도 API fallback 진행
+    }
+
+    // 3순위: Naver API 호출
+    const apiAddress = await fetchNaverAddress(lat, lon);
+    if (!apiAddress) return null;
+
+    setMemoryCache(cacheKey, apiAddress);
+
+    try {
+        await client.query(
+            `INSERT INTO "custom_naver_geocode_cache" ("cache_key", "state", "city", "updated_at")
+             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+             ON CONFLICT ("cache_key") DO UPDATE
+             SET "state" = EXCLUDED."state",
+                 "city" = EXCLUDED."city",
+                 "updated_at" = CURRENT_TIMESTAMP`,
+            [cacheKey, apiAddress.state, apiAddress.city],
+        );
+    } catch (e) {
+        // DB 캐시 저장 실패는 치명적이지 않으므로 무시
+    }
+
+    return { ...apiAddress, fromCache: false };
 }
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -140,8 +211,9 @@ async function main(forceUpdate = false) {
 
     try {
         await client.connect();
+        await ensureCacheTable(client);
 
-        // 무한 루프 없이 main 1회당 DB를 한 번만 스캔
+        // 실패 row 무한 반복 방지를 위해 main 1회당 SELECT는 딱 한 번만 수행
         let queryCondition = `WHERE "latitude" BETWEEN 33 AND 43 AND "longitude" BETWEEN 124 AND 132`;
         queryCondition += ` AND ("country" IN ('South Korea', '대한민국', 'Korea'))`;
 
@@ -157,23 +229,25 @@ async function main(forceUpdate = false) {
             return;
         }
 
-        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🔍 총 ${res.rows.length}장 처리 시작 (현재 캐시 크기: ${addressCache.size})...`);
+        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🔍 총 ${res.rows.length}장 처리 시작 (현재 메모리 캐시 크기: ${addressCache.size})...`);
 
-        // 📊 세분화된 통계 변수
         let processedCount = 0;
         let totalUpdated = 0;
         let apiCallCount = 0;
-        let cacheHitCount = 0;
+        let dbCacheHitCount = 0;
+        let memoryCacheHitCount = 0;
         let fallbackHitCount = 0;
 
         for (const row of res.rows) {
             processedCount++;
 
             try {
-                let address = await getNaverAddress(row.latitude, row.longitude);
+                let address = await getNaverAddress(client, row.latitude, row.longitude);
 
-                if (address && address.fromCache) {
-                    cacheHitCount++;
+                if (address?.fromCache === 'memory') {
+                    memoryCacheHitCount++;
+                } else if (address?.fromCache === 'db') {
+                    dbCacheHitCount++;
                 } else {
                     apiCallCount++;
                 }
@@ -181,6 +255,7 @@ async function main(forceUpdate = false) {
                 if (!address) {
                     const korState = translateLocation(row.state);
                     const korCity = translateLocation(row.city);
+
                     if (korState || korCity) {
                         address = {
                             state: korState || row.state,
@@ -199,21 +274,24 @@ async function main(forceUpdate = false) {
                 }
 
                 if (processedCount % 500 === 0) {
-                    console.log(`⏳ 진행 중: ${processedCount}장 스캔 완료... (API 시도: ${apiCallCount} | 캐시 활용: ${cacheHitCount} | DB 반영: ${totalUpdated})`);
+                    console.log(
+                        `⏳ 진행 중: ${processedCount}장 스캔 완료... (API 시도: ${apiCallCount} | DB 캐시 적중: ${dbCacheHitCount} | 메모리 캐시 적중: ${memoryCacheHitCount} | DB 반영: ${totalUpdated})`,
+                    );
                 }
             } catch (err) {
-                // 개별 업데이트 에러는 무시하고 다음 사진으로 진행
+                // 개별 row 에러는 무시하고 다음 사진으로 진행
             }
 
             await sleep(config.delay);
         }
 
         console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🎉 작업 완료 상세 리포트`);
-        console.log(` ┌─ 총 스캔 대상: ${processedCount}장`);
+        console.log(` ┌─ 총 처리 건수: ${processedCount}장`);
         console.log(` ├─ 실제 DB 반영: ${totalUpdated}장`);
         console.log(` ├─ API 시도 건수: ${apiCallCount}번`);
-        console.log(` ├─ 캐시 처리 건수: ${cacheHitCount}번`);
-        console.log(` └─ 영문/사전 활용: ${fallbackHitCount}번`);
+        console.log(` ├─ DB 캐시 적중: ${dbCacheHitCount}번`);
+        console.log(` ├─ 메모리 캐시 적중: ${memoryCacheHitCount}번`);
+        console.log(` └─ 사전 번역(Fallback): ${fallbackHitCount}번`);
     } catch (err) {
         console.error('❌ [DB 에러]', err.message);
     } finally {
