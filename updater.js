@@ -220,7 +220,7 @@ async function bulkUpdateAssets(client, items) {
 
     items.forEach((item, index) => {
         const base = index * 3;
-        placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3})`);
+        placeholders.push(`($${base + 1}::uuid, $${base + 2}, $${base + 3})`);
         values.push(item.assetId, item.state, item.city);
     });
 
@@ -243,7 +243,7 @@ async function bulkUpdateAssets(client, items) {
 async function bulkUpdateAssetsByIds(client, assetIds, address) {
     if (!assetIds.length || !address) return 0;
 
-    const idPlaceholders = assetIds.map((_, index) => `$${index + 3}`).join(', ');
+    const idPlaceholders = assetIds.map((_, index) => `$${index + 3}::uuid`).join(', ');
     const query = `
         UPDATE "asset_exif"
         SET "country" = '대한민국', "state" = $1, "city" = $2
