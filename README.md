@@ -181,6 +181,71 @@ docker compose up -d --build immich-naver-reverse-geocoding
 
 ---
 
+## 🔄 기존 배포판 사용자의 업데이트 방법
+
+이미 이 워커를 설치해서 사용 중이라면, 아래 순서대로 업데이트하면 됩니다.
+
+### 1. 작업 폴더로 이동
+```bash
+cd /docker/immich/immich-naver-reverse-geocoding
+```
+
+### 2. 최신 코드 받기
+```bash
+git pull origin main
+```
+
+특정 릴리즈 버전으로 고정해서 받고 싶다면:
+```bash
+git fetch --tags
+git checkout v1.1.0
+```
+
+다시 최신 `main` 브랜치 추적으로 돌아오려면:
+```bash
+git checkout main
+git pull origin main
+```
+
+### 3. 컨테이너 다시 빌드 및 재시작
+이 프로젝트는 코드가 바뀌면 컨테이너를 다시 빌드해야 반영됩니다.
+
+```bash
+cd /docker/immich
+docker compose up -d --build immich-naver-reverse-geocoding
+```
+
+### 4. 동작 확인
+로그를 확인해 정상 시작 여부를 점검합니다.
+
+```bash
+docker compose logs -f --tail=100 immich-naver-reverse-geocoding
+```
+
+### 5. 필요 시 강제 재처리
+업데이트 후 기존 사진까지 새 로직으로 다시 처리하고 싶다면:
+
+```bash
+docker compose exec immich-naver-reverse-geocoding node updater.js --force
+```
+
+### 업데이트 시 주의사항
+- **`.env`의 NAVER API 키는 그대로 유지**됩니다. (`/docker/immich/.env`를 마운트해서 사용)
+- PostgreSQL에 저장된 `custom_naver_geocode_cache` 캐시는 **업데이트 후에도 유지**됩니다.
+- `mapping.csv` / `mapping.json` 구조가 바뀌는 업데이트가 있을 경우 README 안내에 따라 다시 생성하면 됩니다.
+- `git checkout v1.1.0`처럼 특정 태그로 고정한 경우, 이후 `git pull`만으로는 최신판으로 안 올라갈 수 있으니 `main` 브랜치로 다시 전환해야 합니다.
+
+### 추천 업데이트 방식
+대부분의 사용자는 아래 3줄이면 충분합니다.
+
+```bash
+cd /docker/immich/immich-naver-reverse-geocoding
+git pull origin main
+cd /docker/immich && docker compose up -d --build immich-naver-reverse-geocoding
+```
+
+---
+
 ## 🛠️ 트리거 명령어
 
 ### 1. 백그라운드 스케줄러 (기본)
