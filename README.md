@@ -129,7 +129,9 @@ DB 캐시는 영구 보관되지만, 너무 오래된 정보는 그대로 믿지
 6. 등록 후 **인증 정보** 버튼을 클릭하여 **Client ID**와 **Client Secret**을 복사해 둡니다.
 
 ### 2. 저장소 클론 (Clone)
-Immich가 설치된 메인 폴더(예: `/docker/immich/`)에서 저장소를 다운로드하고 폴더로 진입합니다.
+Immich가 설치된 **본인의 작업 폴더**에서 저장소를 다운로드하고 폴더로 진입합니다.
+(예: 어떤 사용자는 `/docker/immich`, 다른 사용자는 `/opt/immich`, `/srv/immich` 등을 사용할 수 있습니다.)
+
 ```bash
 git clone https://github.com/lscya84/immich-naver-reverse-geocoding.git
 cd immich-naver-reverse-geocoding
@@ -146,7 +148,7 @@ node make_mapping.js
 ```
 
 ### 4. 환경 변수 (`.env`) 설정 추가
-**Immich 메인 폴더의 `.env` 파일** 하단에 발급받은 API 키 정보를 추가합니다.
+**본인이 실제로 사용하는 Immich 작업 폴더의 `.env` 파일** 하단에 발급받은 API 키 정보를 추가합니다.
 ```env
 # Naver Reverse Geocoding 설정
 NAVER_CLIENT_ID=복사한_ID
@@ -156,7 +158,7 @@ STEP_DELAY_MS=100
 ```
 
 ### 5. docker-compose.yml 수정
-Immich 메인 폴더의 `docker-compose.yml` 파일 `services:` 항목 아래에 다음 내용을 추가합니다.
+**본인이 실제로 사용하는 Immich 작업 폴더의 `docker-compose.yml` 파일** `services:` 항목 아래에 다음 내용을 추가합니다.
 ```yaml
   # [추가] 네이버 역지오코딩 자동 업데이트 워커
   immich-naver-reverse-geocoding:
@@ -185,9 +187,21 @@ docker compose up -d --build immich-naver-reverse-geocoding
 
 이미 이 워커를 설치해서 사용 중이라면, 아래 순서대로 업데이트하면 됩니다.
 
-### 1. 작업 폴더로 이동
+> 아래 예시에서 말하는 **Immich 작업 폴더**는 각자 다를 수 있습니다.
+> 예: `/docker/immich`, `/opt/immich`, `/srv/immich`
+>
+> 즉, 아래 명령어의 경로는 **본인이 실제로 `docker compose`를 실행하는 Immich 폴더 기준으로 바꿔서 사용**하면 됩니다.
+
+### 1. 워커 저장소 폴더로 이동
+먼저 이 저장소를 clone 해둔 폴더로 이동합니다.
+
 ```bash
-cd /docker/immich/immich-naver-reverse-geocoding
+cd <immich 작업 폴더>/immich-naver-reverse-geocoding
+```
+
+예:
+```bash
+cd /opt/immich/immich-naver-reverse-geocoding
 ```
 
 ### 2. 최신 코드 받기
@@ -207,11 +221,11 @@ git checkout main
 git pull origin main
 ```
 
-### 3. 컨테이너 다시 빌드 및 재시작
+### 3. Immich 작업 폴더로 돌아가 컨테이너 다시 빌드 및 재시작
 이 프로젝트는 코드가 바뀌면 컨테이너를 다시 빌드해야 반영됩니다.
 
 ```bash
-cd /docker/immich
+cd <immich 작업 폴더>
 docker compose up -d --build immich-naver-reverse-geocoding
 ```
 
@@ -230,18 +244,19 @@ docker compose exec immich-naver-reverse-geocoding node updater.js --force
 ```
 
 ### 업데이트 시 주의사항
-- **`.env`의 NAVER API 키는 그대로 유지**됩니다. (`/docker/immich/.env`를 마운트해서 사용)
+- **`.env`의 NAVER API 키는 그대로 유지**됩니다. 다만 이 값은 사용자가 `docker compose`에서 마운트한 **자기 Immich 작업 폴더의 `.env` 파일** 기준입니다.
 - PostgreSQL에 저장된 `custom_naver_geocode_cache` 캐시는 **업데이트 후에도 유지**됩니다.
 - `mapping.csv` / `mapping.json` 구조가 바뀌는 업데이트가 있을 경우 README 안내에 따라 다시 생성하면 됩니다.
 - `git checkout v1.1.0`처럼 특정 태그로 고정한 경우, 이후 `git pull`만으로는 최신판으로 안 올라갈 수 있으니 `main` 브랜치로 다시 전환해야 합니다.
 
 ### 추천 업데이트 방식
-대부분의 사용자는 아래 3줄이면 충분합니다.
+대부분의 사용자는 아래 흐름이면 충분합니다.
 
 ```bash
-cd /docker/immich/immich-naver-reverse-geocoding
+cd <immich 작업 폴더>/immich-naver-reverse-geocoding
 git pull origin main
-cd /docker/immich && docker compose up -d --build immich-naver-reverse-geocoding
+cd <immich 작업 폴더>
+docker compose up -d --build immich-naver-reverse-geocoding
 ```
 
 ---
