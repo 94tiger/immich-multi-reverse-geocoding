@@ -97,6 +97,8 @@ node make_mapping.js
 
 특별히 최신 행정구역 기준으로 다시 만들고 싶은 경우에만 `mapping.csv`를 교체해서 재생성하면 됩니다.
 
+> 참고: `mapping.csv`가 UTF-8이 아닌 CP949/EUC-KR 계열 인코딩이면 한글이 깨질 수 있습니다. 이 경우 UTF-8로 변환한 뒤 `mapping.json`을 다시 생성하세요.
+
 ### 5) `docker-compose.yml`에 서비스 추가
 Immich의 `docker-compose.yml`에 아래 서비스를 추가합니다.
 
