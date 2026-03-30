@@ -148,7 +148,7 @@ async function getNaverAddress(client, lat, lon) {
 
     // 1순위: L1 메모리 캐시
     if (addressCache.has(cacheKey)) {
-        return { ...addressCache.get(cacheKey), fromCache: 'memory' };
+        return { ...addressCache.get(cacheKey), source: 'memory' };
     }
 
     // 2순위: L2 DB 캐시 (TTL 180일)
@@ -168,7 +168,7 @@ async function getNaverAddress(client, lat, lon) {
                 city: cacheRes.rows[0].city,
             };
             setMemoryCache(cacheKey, cachedAddress);
-            return { ...cachedAddress, fromCache: 'db' };
+            return { ...cachedAddress, source: 'db' };
         }
     } catch (e) {
         // DB 캐시 조회 실패 시에도 API fallback 진행
@@ -194,7 +194,7 @@ async function getNaverAddress(client, lat, lon) {
         // DB 캐시 저장 실패는 치명적이지 않으므로 무시
     }
 
-    return { ...apiAddress, fromCache: false };
+    return { ...apiAddress, source: 'api' };
 }
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -240,15 +240,16 @@ async function main(forceUpdate = false) {
 
         for (const row of res.rows) {
             processedCount++;
+            let address = null;
 
             try {
-                let address = await getNaverAddress(client, row.latitude, row.longitude);
+                address = await getNaverAddress(client, row.latitude, row.longitude);
 
-                if (address?.fromCache === 'memory') {
+                if (address?.source === 'memory') {
                     memoryCacheHitCount++;
-                } else if (address?.fromCache === 'db') {
+                } else if (address?.source === 'db') {
                     dbCacheHitCount++;
-                } else {
+                } else if (address?.source === 'api') {
                     apiCallCount++;
                 }
 
@@ -282,7 +283,10 @@ async function main(forceUpdate = false) {
                 // 개별 row 에러는 무시하고 다음 사진으로 진행
             }
 
-            await sleep(config.delay);
+            // 네이버 API를 직접 호출했을 때만 sleep
+            if (address?.source === 'api') {
+                await sleep(config.delay);
+            }
         }
 
         console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🎉 작업 완료 상세 리포트`);
