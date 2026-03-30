@@ -133,22 +133,6 @@ cd <immich 작업 폴더>
 docker compose up -d --build immich-naver-reverse-geocoding
 ```
 
-### 특정 릴리즈 버전으로 고정
-```bash
-cd <immich 작업 폴더>/immich-naver-reverse-geocoding
-git fetch --tags
-git checkout v1.1.0
-cd <immich 작업 폴더>
-docker compose up -d --build immich-naver-reverse-geocoding
-```
-
-### 다시 `main` 브랜치로 복귀
-```bash
-cd <immich 작업 폴더>/immich-naver-reverse-geocoding
-git checkout main
-git pull origin main
-```
-
 ---
 
 ## 실행 / 사용
@@ -174,7 +158,6 @@ docker compose logs -f --tail=100 immich-naver-reverse-geocoding
 
 - `.env`의 네이버 API 키는 그대로 사용됩니다.
 - PostgreSQL의 `custom_naver_geocode_cache` 캐시는 유지됩니다.
-- 특정 태그(`v1.1.0` 등)로 checkout 한 경우, 이후 최신판으로 가려면 `main` 브랜치로 다시 전환해야 합니다.
 - 코드 변경 후에는 `docker compose up -d --build ...`로 재빌드해야 반영됩니다.
 
 ---
