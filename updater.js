@@ -16,6 +16,7 @@ const config = {
     },
     interval: parseInt(process.env.INTERVAL_HOURS || '24', 10) * 60 * 60 * 1000,
     delay: parseInt(process.env.STEP_DELAY_MS || '100', 10),
+    apiTimeoutMs: parseInt(process.env.NAVER_API_TIMEOUT_MS || '10000', 10),
 };
 
 const isForceMode = process.argv.includes('--force');
@@ -31,7 +32,7 @@ const CACHE_TTL_DAYS = 180;
 // Two-Phase 처리 튜닝
 const FAST_TRACK_CHUNK_SIZE = 2000;
 const FAST_TRACK_LOG_INTERVAL = 10000;
-const API_TRACK_LOG_INTERVAL = 500;
+const API_TRACK_LOG_INTERVAL = 50;
 
 // 중복 실행 방지용 Lock
 let isRunning = false;
@@ -119,7 +120,14 @@ function fetchNaverAddress(lat, lon) {
             },
         };
 
-        https.get(url, options, (res) => {
+        let settled = false;
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+
+        const req = https.get(url, options, (res) => {
             let data = '';
 
             res.on('data', (chunk) => {
@@ -129,13 +137,13 @@ function fetchNaverAddress(lat, lon) {
             res.on('end', () => {
                 try {
                     if (res.statusCode !== 200) {
-                        resolve(null);
+                        finish(null);
                         return;
                     }
 
                     const parsed = JSON.parse(data);
                     if (parsed.status?.code !== 0 || !Array.isArray(parsed.results) || parsed.results.length === 0) {
-                        resolve(null);
+                        finish(null);
                         return;
                     }
 
@@ -165,15 +173,25 @@ function fetchNaverAddress(lat, lon) {
                         cityName = `${cityName} (${buildingName})`.trim();
                     }
 
-                    resolve({
+                    finish({
                         state: stateName,
                         city: cityName,
                     });
                 } catch (e) {
-                    resolve(null);
+                    finish(null);
                 }
             });
-        }).on('error', () => resolve(null));
+
+            res.on('error', () => finish(null));
+        });
+
+        req.setTimeout(config.apiTimeoutMs, () => {
+            console.log(`[${nowKst()}] ⏱️ NAVER API timeout: ${lat}, ${lon} (${config.apiTimeoutMs}ms)`);
+            req.destroy(new Error('NAVER_API_TIMEOUT'));
+            finish(null);
+        });
+
+        req.on('error', () => finish(null));
     });
 }
 
@@ -378,6 +396,12 @@ async function main(forceUpdate = false) {
 
             const firstRow = rows[0];
             let address = null;
+
+            if (apiProcessedGroups <= 3) {
+                console.log(
+                    `[${nowKst()}] 🔎 API Track 샘플 시작: ${apiProcessedGroups}/${apiTrackGroups.size}그룹 | cache_key=${cacheKey} | lat=${firstRow.latitude} | lon=${firstRow.longitude} | photos=${rows.length}`,
+                );
+            }
 
             try {
                 address = await getNaverAddress(client, firstRow.latitude, firstRow.longitude);

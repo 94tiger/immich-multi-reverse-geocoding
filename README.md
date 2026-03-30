@@ -84,6 +84,7 @@ NAVER_CLIENT_ID=복사한_ID
 NAVER_CLIENT_SECRET=복사한_Secret
 INTERVAL_HOURS=24
 STEP_DELAY_MS=100
+NAVER_API_TIMEOUT_MS=10000
 ```
 
 ### 4) `mapping.json` 준비
@@ -158,6 +159,7 @@ docker compose logs -f --tail=100 immich-naver-reverse-geocoding
 
 - `.env`의 네이버 API 키는 그대로 사용됩니다.
 - PostgreSQL의 `custom_naver_geocode_cache` 캐시는 유지됩니다.
+- `NAVER_API_TIMEOUT_MS`로 네이버 API 요청 최대 대기시간(기본 10000ms)을 조정할 수 있습니다.
 - 코드 변경 후에는 `docker compose up -d --build ...`로 재빌드해야 반영됩니다.
 
 ---
