@@ -28,6 +28,11 @@ const MAX_CACHE_SIZE = 50000;
 // L2 캐시 (DB) 유효기간
 const CACHE_TTL_DAYS = 180;
 
+// Two-Phase 처리 튜닝
+const FAST_TRACK_CHUNK_SIZE = 2000;
+const FAST_TRACK_LOG_INTERVAL = 10000;
+const API_TRACK_LOG_INTERVAL = 500;
+
 // 중복 실행 방지용 Lock
 let isRunning = false;
 
@@ -37,6 +42,10 @@ try {
         locationMap = JSON.parse(fs.readFileSync(mappingPath, 'utf8'));
     }
 } catch (e) {}
+
+function nowKst() {
+    return new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+}
 
 function translateLocation(engName) {
     if (!engName) return null;
@@ -56,11 +65,12 @@ function translateLocation(engName) {
 }
 
 function getCacheKey(lat, lon) {
+    // 건물명 정밀도 유지를 위해 소수점 5자리
     return `${parseFloat(lat).toFixed(5)}_${parseFloat(lon).toFixed(5)}`;
 }
 
-function setMemoryCache(cacheKey, value) {
-    if (addressCache.size >= MAX_CACHE_SIZE) {
+function setMemoryCache(cacheKey, value, enforceLimit = true) {
+    if (enforceLimit && addressCache.size >= MAX_CACHE_SIZE) {
         const firstKey = addressCache.keys().next().value;
         addressCache.delete(firstKey);
     }
@@ -76,6 +86,27 @@ async function ensureCacheTable(client) {
             "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     `);
+}
+
+async function warmUpCache(client) {
+    addressCache.clear();
+
+    const res = await client.query(
+        `SELECT "cache_key", "state", "city"
+         FROM "custom_naver_geocode_cache"
+         WHERE "updated_at" >= CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')`,
+        [CACHE_TTL_DAYS],
+    );
+
+    for (const row of res.rows) {
+        // 워밍업은 유효 캐시를 전부 적재하는 것이 목적이므로 제한 없이 적재
+        setMemoryCache(row.cache_key, {
+            state: row.state,
+            city: row.city,
+        }, false);
+    }
+
+    return res.rows.length;
 }
 
 function fetchNaverAddress(lat, lon) {
@@ -134,7 +165,10 @@ function fetchNaverAddress(lat, lon) {
                         cityName = `${cityName} (${buildingName})`.trim();
                     }
 
-                    resolve({ state: stateName, city: cityName });
+                    resolve({
+                        state: stateName,
+                        city: cityName,
+                    });
                 } catch (e) {
                     resolve(null);
                 }
@@ -143,66 +177,75 @@ function fetchNaverAddress(lat, lon) {
     });
 }
 
+async function upsertCache(client, cacheKey, address) {
+    await client.query(
+        `INSERT INTO "custom_naver_geocode_cache" ("cache_key", "state", "city", "updated_at")
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+         ON CONFLICT ("cache_key") DO UPDATE
+         SET "state" = EXCLUDED."state",
+             "city" = EXCLUDED."city",
+             "updated_at" = CURRENT_TIMESTAMP`,
+        [cacheKey, address.state, address.city],
+    );
+}
+
 async function getNaverAddress(client, lat, lon) {
     const cacheKey = getCacheKey(lat, lon);
 
-    // 1순위: L1 메모리 캐시
+    // 메모리 캐시만 확인
     if (addressCache.has(cacheKey)) {
         return { ...addressCache.get(cacheKey), source: 'memory' };
     }
 
-    // 2순위: L2 DB 캐시 (TTL 180일)
-    try {
-        const cacheRes = await client.query(
-            `SELECT "state", "city"
-             FROM "custom_naver_geocode_cache"
-             WHERE "cache_key" = $1
-               AND "updated_at" >= CURRENT_TIMESTAMP - ($2 * INTERVAL '1 day')
-             LIMIT 1`,
-            [cacheKey, CACHE_TTL_DAYS],
-        );
-
-        if (cacheRes.rows.length > 0) {
-            const cachedAddress = {
-                state: cacheRes.rows[0].state,
-                city: cacheRes.rows[0].city,
-            };
-            setMemoryCache(cacheKey, cachedAddress);
-            return { ...cachedAddress, source: 'db' };
-        }
-    } catch (e) {
-        // DB 캐시 조회 실패 시에도 API fallback 진행
-    }
-
-    // 3순위: Naver API 호출
+    // 메모리에 없으면 바로 API 호출
     const apiAddress = await fetchNaverAddress(lat, lon);
     if (!apiAddress) return null;
 
     setMemoryCache(cacheKey, apiAddress);
 
     try {
-        await client.query(
-            `INSERT INTO "custom_naver_geocode_cache" ("cache_key", "state", "city", "updated_at")
-             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-             ON CONFLICT ("cache_key") DO UPDATE
-             SET "state" = EXCLUDED."state",
-                 "city" = EXCLUDED."city",
-                 "updated_at" = CURRENT_TIMESTAMP`,
-            [cacheKey, apiAddress.state, apiAddress.city],
-        );
+        await upsertCache(client, cacheKey, apiAddress);
     } catch (e) {
-        // DB 캐시 저장 실패는 치명적이지 않으므로 무시
+        // 캐시 저장 실패는 치명적이지 않으므로 무시
     }
 
     return { ...apiAddress, source: 'api' };
 }
 
+async function bulkUpdateAssets(client, items) {
+    if (!items.length) return 0;
+
+    const values = [];
+    const placeholders = [];
+
+    items.forEach((item, index) => {
+        const base = index * 3;
+        placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3})`);
+        values.push(item.assetId, item.state, item.city);
+    });
+
+    const query = `
+        UPDATE "asset_exif" AS a
+        SET
+            "country" = '대한민국',
+            "state" = v.state,
+            "city" = v.city
+        FROM (
+            VALUES ${placeholders.join(', ')}
+        ) AS v(asset_id, state, city)
+        WHERE a."assetId" = v.asset_id
+    `;
+
+    const result = await client.query(query, values);
+    return result.rowCount || 0;
+}
+
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 async function main(forceUpdate = false) {
-    // 타이머가 겹쳐 동일 프로세스가 2개 이상 도는 것 방지
+    // 중복 실행 방지
     if (isRunning) {
-        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] ⏳ 이미 작업이 진행 중입니다. 스킵합니다.`);
+        console.log(`[${nowKst()}] ⏳ 이미 작업이 진행 중입니다. 스킵합니다.`);
         return;
     }
 
@@ -213,7 +256,10 @@ async function main(forceUpdate = false) {
         await client.connect();
         await ensureCacheTable(client);
 
-        // 실패 row 무한 반복 방지를 위해 main 1회당 SELECT는 딱 한 번만 수행
+        const warmedCount = await warmUpCache(client);
+        console.log(`[${nowKst()}] 🔥 캐시 워밍업 완료: ${warmedCount}건 적재`);
+
+        // main 1회당 대상 SELECT는 딱 1번만 수행
         let queryCondition = `WHERE "latitude" BETWEEN 33 AND 43 AND "longitude" BETWEEN 124 AND 132`;
         queryCondition += ` AND ("country" IN ('South Korea', '대한민국', 'Korea'))`;
 
@@ -221,34 +267,97 @@ async function main(forceUpdate = false) {
             queryCondition += ` AND ("city" IS NULL OR "city" !~ '[가-힣]')`;
         }
 
-        const query = `SELECT "assetId", "latitude", "longitude", "country", "city", "state" FROM "asset_exif" ${queryCondition};`;
+        const query = `
+            SELECT "assetId", "latitude", "longitude", "country", "city", "state"
+            FROM "asset_exif"
+            ${queryCondition};
+        `;
+
         const res = await client.query(query);
 
         if (res.rows.length === 0) {
-            console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🔍 업데이트할 항목이 없습니다.`);
+            console.log(`[${nowKst()}] 🔍 업데이트할 항목이 없습니다.`);
             return;
         }
 
-        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🔍 총 ${res.rows.length}장 처리 시작 (현재 메모리 캐시 크기: ${addressCache.size})...`);
-
-        let processedCount = 0;
-        let totalUpdated = 0;
-        let apiCallCount = 0;
-        let dbCacheHitCount = 0;
-        let memoryCacheHitCount = 0;
-        let fallbackHitCount = 0;
+        const fastTrackRows = [];
+        const apiTrackRows = [];
 
         for (const row of res.rows) {
-            processedCount++;
+            const cacheKey = getCacheKey(row.latitude, row.longitude);
+            if (addressCache.has(cacheKey)) {
+                fastTrackRows.push(row);
+            } else {
+                apiTrackRows.push(row);
+            }
+        }
+
+        console.log(`[${nowKst()}] 🧭 대상 분류 완료: Fast Track ${fastTrackRows.length}건, API Track ${apiTrackRows.length}건`);
+
+        let totalUpdated = 0;
+        let fastTrackUpdated = 0;
+        let apiTrackUpdated = 0;
+        let apiCallCount = 0;
+        let fastTrackHitCount = fastTrackRows.length;
+        let apiTrackMemoryHitCount = 0;
+        let fallbackHitCount = 0;
+
+        // Phase 1: Fast Track
+        console.log(`[${nowKst()}] ⚡ Phase 1 시작: 캐시 적중 건 고속 처리`);
+
+        let fastPrepared = 0;
+
+        for (let i = 0; i < fastTrackRows.length; i += FAST_TRACK_CHUNK_SIZE) {
+            const chunk = fastTrackRows.slice(i, i + FAST_TRACK_CHUNK_SIZE);
+
+            const updateItems = chunk
+                .map((row) => {
+                    const cacheKey = getCacheKey(row.latitude, row.longitude);
+                    const cached = addressCache.get(cacheKey);
+                    if (!cached) return null;
+
+                    return {
+                        assetId: row.assetId,
+                        state: cached.state,
+                        city: cached.city,
+                    };
+                })
+                .filter(Boolean);
+
+            fastPrepared += chunk.length;
+
+            if (updateItems.length > 0) {
+                const updated = await bulkUpdateAssets(client, updateItems);
+                fastTrackUpdated += updated;
+                totalUpdated += updated;
+            }
+
+            if (fastPrepared % FAST_TRACK_LOG_INTERVAL === 0 || fastPrepared === fastTrackRows.length) {
+                console.log(
+                    `[${nowKst()}] ⚡ Fast Track 진행: ${fastPrepared}/${fastTrackRows.length}건 준비 완료 (DB 반영: ${fastTrackUpdated})`,
+                );
+            }
+        }
+
+        console.log(`[${nowKst()}] ✅ Phase 1 완료: ${fastTrackUpdated}건 반영`);
+
+        // Phase 2: API Track
+        console.log(`[${nowKst()}] 🌐 Phase 2 시작: 미확인 주소만 API 처리`);
+
+        let apiProcessed = 0;
+
+        for (const row of apiTrackRows) {
+            apiProcessed++;
+            const cacheKey = getCacheKey(row.latitude, row.longitude);
+            const wasCachedBeforeLookup = addressCache.has(cacheKey);
+
             let address = null;
 
             try {
                 address = await getNaverAddress(client, row.latitude, row.longitude);
 
                 if (address?.source === 'memory') {
-                    memoryCacheHitCount++;
-                } else if (address?.source === 'db') {
-                    dbCacheHitCount++;
+                    apiTrackMemoryHitCount++;
                 } else if (address?.source === 'api') {
                     apiCallCount++;
                 }
@@ -261,6 +370,7 @@ async function main(forceUpdate = false) {
                         address = {
                             state: korState || row.state,
                             city: korCity || row.city,
+                            source: 'fallback',
                         };
                         fallbackHitCount++;
                     }
@@ -268,34 +378,43 @@ async function main(forceUpdate = false) {
 
                 if (address) {
                     await client.query(
-                        `UPDATE "asset_exif" SET "country" = '대한민국', "state" = $1, "city" = $2 WHERE "assetId" = $3`,
+                        `UPDATE "asset_exif"
+                         SET "country" = '대한민국', "state" = $1, "city" = $2
+                         WHERE "assetId" = $3`,
                         [address.state, address.city, row.assetId],
                     );
+                    apiTrackUpdated++;
                     totalUpdated++;
-                }
-
-                if (processedCount % 500 === 0) {
-                    console.log(
-                        `⏳ 진행 중: ${processedCount}장 스캔 완료... (API 시도: ${apiCallCount} | DB 캐시 적중: ${dbCacheHitCount} | 메모리 캐시 적중: ${memoryCacheHitCount} | DB 반영: ${totalUpdated})`,
-                    );
                 }
             } catch (err) {
                 // 개별 row 에러는 무시하고 다음 사진으로 진행
             }
 
-            // 네이버 API를 직접 호출했을 때만 sleep
-            if (address?.source === 'api') {
+            if (apiProcessed % API_TRACK_LOG_INTERVAL === 0 || apiProcessed === apiTrackRows.length) {
+                console.log(
+                    `[${nowKst()}] 🌐 API Track 진행: ${apiProcessed}/${apiTrackRows.length}건 (실제 API 호출: ${apiCallCount} | 중복 좌표 메모리 재사용: ${apiTrackMemoryHitCount} | Fallback: ${fallbackHitCount} | DB 반영: ${apiTrackUpdated})`,
+                );
+            }
+
+            // 실제 API를 호출한 경우에만 rate limit 방어용 sleep
+            if (!wasCachedBeforeLookup && address?.source === 'api') {
                 await sleep(config.delay);
             }
         }
 
-        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🎉 작업 완료 상세 리포트`);
-        console.log(` ┌─ 총 처리 건수: ${processedCount}장`);
-        console.log(` ├─ 실제 DB 반영: ${totalUpdated}장`);
-        console.log(` ├─ API 시도 건수: ${apiCallCount}번`);
-        console.log(` ├─ DB 캐시 적중: ${dbCacheHitCount}번`);
-        console.log(` ├─ 메모리 캐시 적중: ${memoryCacheHitCount}번`);
-        console.log(` └─ 사전 번역(Fallback): ${fallbackHitCount}번`);
+        console.log(`[${nowKst()}] ✅ Phase 2 완료: ${apiTrackUpdated}건 반영`);
+
+        console.log(`[${nowKst()}] 🎉 작업 완료 상세 리포트`);
+        console.log(` ┌─ 캐시 워밍업 적재: ${warmedCount}건`);
+        console.log(` ├─ Fast Track 대상: ${fastTrackRows.length}건`);
+        console.log(` ├─ API Track 대상: ${apiTrackRows.length}건`);
+        console.log(` ├─ Fast Track 캐시 적중: ${fastTrackHitCount}건`);
+        console.log(` ├─ Fast Track 반영: ${fastTrackUpdated}건`);
+        console.log(` ├─ API Track 반영: ${apiTrackUpdated}건`);
+        console.log(` ├─ 실제 API 호출: ${apiCallCount}번`);
+        console.log(` ├─ API Track 내 메모리 재사용: ${apiTrackMemoryHitCount}번`);
+        console.log(` ├─ 사전 번역(Fallback): ${fallbackHitCount}번`);
+        console.log(` └─ 총 DB 반영: ${totalUpdated}건`);
     } catch (err) {
         console.error('❌ [DB 에러]', err.message);
     } finally {
