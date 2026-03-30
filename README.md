@@ -60,12 +60,17 @@ cd immich-naver-reverse-geocoding
 ### 2) 네이버 API 키 준비
 네이버 클라우드 플랫폼에서 **Maps / Reverse Geocoding API**를 사용할 수 있도록 애플리케이션을 만든 뒤 아래 값을 준비합니다.
 
+- 네이버 클라우드 플랫폼: https://console.ncloud.com/
+- AI·NAVER API 안내: https://www.ncloud.com/product/aiService/aiNaverApi
+
+준비할 값:
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
 
 진행 순서는 보통 다음과 같습니다.
 - 네이버 클라우드 플랫폼 로그인
-- AI·NAVER API 또는 Maps 관련 메뉴에서 애플리케이션 생성
+- AI·NAVER API 또는 Maps 관련 메뉴로 이동
+- 애플리케이션 생성
 - Reverse Geocoding 사용 설정
 - 발급된 Client ID / Client Secret 확인
 
@@ -82,11 +87,14 @@ STEP_DELAY_MS=100
 ```
 
 ### 4) `mapping.json` 준비
-행정구역 매핑이 필요하면 `mapping.csv`를 준비한 뒤 아래를 실행합니다.
+이 저장소는 기본적으로 `mapping.csv`를 포함해 배포하는 것을 전제로 합니다.
+따라서 일반적인 사용자는 별도로 `mapping.csv`를 새로 구할 필요 없이, 저장소에 포함된 파일로 `mapping.json`만 생성하면 됩니다.
 
 ```bash
 node make_mapping.js
 ```
+
+특별히 최신 행정구역 기준으로 다시 만들고 싶은 경우에만 `mapping.csv`를 교체해서 재생성하면 됩니다.
 
 ### 5) `docker-compose.yml`에 서비스 추가
 Immich의 `docker-compose.yml`에 아래 서비스를 추가합니다.
