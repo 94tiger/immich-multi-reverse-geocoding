@@ -20,6 +20,8 @@ const config = {
 
 const isForceMode = process.argv.includes('--force');
 let locationMap = {};
+const addressCache = new Map();
+const MAX_CACHE_SIZE = 10000; // 메모리 보호를 위한 캐시 최대 크기
 
 try {
     const mappingPath = path.join(__dirname, 'mapping.json');
@@ -28,38 +30,35 @@ try {
     }
 } catch (e) {}
 
-/**
- * 지명 번역 로직 강화: 과잉 매핑 방지
- */
 function translateLocation(engName) {
     if (!engName) return null;
-    
-    // 1. 표준화: 소문자 변환 및 접미사(-si, -do 등) 제거 버전 준비
     const original = engName.toLowerCase().trim();
     const clean = original.replace(/-(do|si|gun|gu|eup|myeon|dong|ri)$/i, '').trim();
     
-    // 2. [1순위] 전체 일치 확인 (가장 정확함)
     if (locationMap[original]) return locationMap[original];
     if (locationMap[clean]) return locationMap[clean];
 
-    // 3. [2순위] 반복문을 돌되, '포함'이 아니라 '정확한 단어 경계' 확인
     for (const [eng, kor] of Object.entries(locationMap)) {
         const key = eng.toLowerCase();
-        // 단어가 완전히 일치하거나, '-'로 구분된 단어 중 하나가 일치할 때만 허용
-        if (original === key || original.split('-').includes(key)) {
-            return kor;
-        }
+        if (original === key || original.split('-').includes(key)) return kor;
     }
-    
-    return null; // 불확실하면 원본 영문을 그대로 유지 (잘못된 한글보다 영문이 나음)
+    return null;
 }
 
 function getNaverAddress(lat, lon) {
     return new Promise((resolve) => {
-        const url = `https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc?coords=${lon},${lat}&output=json&orders=admcode,roadaddr`;
+        // 소수점 4자리 반올림 (약 11m 오차 범위 내 동일 지역 간주)
+        const cacheKey = `${parseFloat(lat).toFixed(4)}_${parseFloat(lon).toFixed(4)}`;
+        
+        if (addressCache.has(cacheKey)) {
+            return resolve({ ...addressCache.get(cacheKey), fromCache: true });
+        }
+
+        const url = `https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc?coords=${lon},${lat}&output=json&orders=admcode,roadaddr,addr`;
         const options = {
             headers: { 'x-ncp-apigw-api-key-id': config.naverId, 'x-ncp-apigw-api-key': config.naverSecret }
         };
+        
         https.get(url, options, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
@@ -68,11 +67,40 @@ function getNaverAddress(lat, lon) {
                     if (res.statusCode === 200) {
                         const parsed = JSON.parse(data);
                         if (parsed.status.code === 0 && parsed.results.length > 0) {
-                            const region = parsed.results[0].region;
-                            resolve({ 
-                                state: region.area1.name, 
-                                city: `${region.area2.name} ${region.area3.name}`.trim() 
-                            });
+                            const admResult = parsed.results.find(r => r.name === 'admcode') || parsed.results[0];
+                            const region = admResult.region;
+                            
+                            const stateName = region.area1.name;
+                            const area2 = region.area2 ? region.area2.name : '';
+                            const area3 = region.area3 ? region.area3.name : '';
+                            const area4 = region.area4 ? region.area4.name : '';
+                            
+                            let cityParts = [area2, area3, area4].filter(part => part && part.trim() !== '');
+                            let cityName = cityParts.join(' ');
+                            
+                            let buildingName = '';
+                            const roadResult = parsed.results.find(r => r.name === 'roadaddr');
+                            if (roadResult && roadResult.land && roadResult.land.addition0 && roadResult.land.addition0.value) {
+                                const rawBuildingName = roadResult.land.addition0.value.trim();
+                                if (rawBuildingName.length >= 2 && isNaN(rawBuildingName)) {
+                                    buildingName = rawBuildingName;
+                                }
+                            }
+
+                            if (buildingName) {
+                                cityName = `${cityName} (${buildingName})`.trim();
+                            }
+
+                            const result = { state: stateName, city: cityName };
+                            
+                            // 캐시 저장 (크기 제한 확인)
+                            if (addressCache.size >= MAX_CACHE_SIZE) {
+                                const firstKey = addressCache.keys().next().value;
+                                addressCache.delete(firstKey);
+                            }
+                            addressCache.set(cacheKey, result);
+                            
+                            resolve({ ...result, fromCache: false });
                             return;
                         }
                     }
@@ -84,55 +112,78 @@ function getNaverAddress(lat, lon) {
 }
 
 const sleep = ms => new Promise(res => setTimeout(res, ms));
+let isRunning = false;
 
 async function main(forceUpdate = false) {
+    if (isRunning) {
+        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] ⏳ 이미 작업이 진행 중입니다. 스킵합니다.`);
+        return;
+    }
+
     const client = new Client(config.db);
+    isRunning = true;
+
     try {
         await client.connect();
+        let totalUpdated = 0;
+        let cacheHitCount = 0;
         
-        let queryCondition = `WHERE "latitude" BETWEEN 33 AND 43 AND "longitude" BETWEEN 124 AND 132`;
-        queryCondition += ` AND ("country" IN ('South Korea', '대한민국', 'Korea'))`;
+        while (true) {
+            let queryCondition = `WHERE "latitude" BETWEEN 33 AND 43 AND "longitude" BETWEEN 124 AND 132`;
+            queryCondition += ` AND ("country" IN ('South Korea', '대한민국', 'Korea'))`;
 
-        if (!forceUpdate) {
-            queryCondition += ` AND ("city" IS NULL OR "city" !~ '[가-힣]')`;
-        }
+            if (!forceUpdate) {
+                queryCondition += ` AND ("city" IS NULL OR "city" !~ '[가-힣]')`;
+            }
 
-        const query = `SELECT "assetId", "latitude", "longitude", "country", "city", "state" FROM "asset_exif" ${queryCondition};`;
-        const res = await client.query(query);
-        
-        console.log(`[${new Date().toISOString()}] 🔍 스캔 시작: 총 ${res.rows.length}장 대상`);
+            const query = `SELECT "assetId", "latitude", "longitude", "country", "city", "state" FROM "asset_exif" ${queryCondition} LIMIT 1000;`;
+            const res = await client.query(query);
+            
+            if (res.rows.length === 0) break;
 
-        let updatedCount = 0;
-        for (const row of res.rows) {
-            try {
-                let address = await getNaverAddress(row.latitude, row.longitude);
-                
-                if (!address) {
-                    const korState = translateLocation(row.state);
-                    const korCity = translateLocation(row.city);
+            console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🔍 1,000장 처리 시작 (캐시 크기: ${addressCache.size})...`);
+
+            for (const row of res.rows) {
+                try {
+                    let address = await getNaverAddress(row.latitude, row.longitude);
                     
-                    if (korState || korCity) {
-                        // 정보가 존재할 때만 업데이트하되, 영문보다 나은 정보일 때만 수행
-                        address = { state: korState || row.state, city: korCity || row.city };
-                    }
-                }
+                    if (address && address.fromCache) cacheHitCount++;
 
-                if (address) {
-                    await client.query(
-                        `UPDATE "asset_exif" SET "country" = '대한민국', "state" = $1, "city" = $2 WHERE "assetId" = $3`,
-                        [address.state, address.city, row.assetId]
-                    );
-                    updatedCount++;
-                    if (updatedCount % 500 === 0) console.log(`⏳ 진행 중: ${updatedCount}장 완료...`);
+                    if (!address) {
+                        const korState = translateLocation(row.state);
+                        const korCity = translateLocation(row.city);
+                        if (korState || korCity) {
+                            address = { state: korState || row.state, city: korCity || row.city };
+                        }
+                    }
+
+                    if (address) {
+                        await client.query(
+                            `UPDATE "asset_exif" SET "country" = '대한민국', "state" = $1, "city" = $2 WHERE "assetId" = $3`,
+                            [address.state, address.city, row.assetId]
+                        );
+                        totalUpdated++;
+                    }
+                } catch (err) {
+                    // 개별 업데이트 에러는 무시하고 진행
                 }
-            } catch (err) {}
-            await sleep(config.delay); 
+                await sleep(config.delay); 
+            }
+
+            // forceUpdate가 아니더라도 한 번의 cycle(LIMIT 1000)에서 업데이트된 게 없으면 
+            // 무한 루프 방지를 위해 탈출 (실패 row 반복 방어)
+            if (totalUpdated === 0 && !forceUpdate) break;
+            if (forceUpdate) break; 
         }
-        console.log(`[${new Date().toISOString()}] 🎉 작업 완료: 총 ${updatedCount}장 업데이트됨`);
+        
+        if (totalUpdated > 0) {
+            console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🎉 작업 완료! 총 ${totalUpdated}장 업데이트 (캐시 활용: ${cacheHitCount}번)`);
+        }
     } catch (err) {
         console.error("❌ [DB 에러]", err.message);
     } finally {
         await client.end();
+        isRunning = false;
     }
 }
 
