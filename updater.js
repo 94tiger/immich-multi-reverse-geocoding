@@ -159,15 +159,24 @@ async function main(forceUpdate = false) {
 
         console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🔍 총 ${res.rows.length}장 처리 시작 (현재 캐시 크기: ${addressCache.size})...`);
 
+        // 📊 세분화된 통계 변수
+        let processedCount = 0;
         let totalUpdated = 0;
+        let apiCallCount = 0;
         let cacheHitCount = 0;
         let fallbackHitCount = 0;
 
         for (const row of res.rows) {
+            processedCount++;
+
             try {
                 let address = await getNaverAddress(row.latitude, row.longitude);
 
-                if (address && address.fromCache) cacheHitCount++;
+                if (address && address.fromCache) {
+                    cacheHitCount++;
+                } else {
+                    apiCallCount++;
+                }
 
                 if (!address) {
                     const korState = translateLocation(row.state);
@@ -187,10 +196,10 @@ async function main(forceUpdate = false) {
                         [address.state, address.city, row.assetId],
                     );
                     totalUpdated++;
+                }
 
-                    if (totalUpdated % 500 === 0) {
-                        console.log(`⏳ 진행 중: ${totalUpdated}장 완료...`);
-                    }
+                if (processedCount % 500 === 0) {
+                    console.log(`⏳ 진행 중: ${processedCount}장 스캔 완료... (API 시도: ${apiCallCount} | 캐시 활용: ${cacheHitCount} | DB 반영: ${totalUpdated})`);
                 }
             } catch (err) {
                 // 개별 업데이트 에러는 무시하고 다음 사진으로 진행
@@ -199,9 +208,12 @@ async function main(forceUpdate = false) {
             await sleep(config.delay);
         }
 
-        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🎉 작업 완료! 총 ${totalUpdated}장 업데이트`);
-        console.log(` - API 캐시 활용: ${cacheHitCount}번`);
-        console.log(` - 영문/사전 번역 활용: ${fallbackHitCount}번`);
+        console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] 🎉 작업 완료 상세 리포트`);
+        console.log(` ┌─ 총 스캔 대상: ${processedCount}장`);
+        console.log(` ├─ 실제 DB 반영: ${totalUpdated}장`);
+        console.log(` ├─ API 시도 건수: ${apiCallCount}번`);
+        console.log(` ├─ 캐시 처리 건수: ${cacheHitCount}번`);
+        console.log(` └─ 영문/사전 활용: ${fallbackHitCount}번`);
     } catch (err) {
         console.error('❌ [DB 에러]', err.message);
     } finally {
