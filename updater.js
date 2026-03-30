@@ -240,6 +240,20 @@ async function bulkUpdateAssets(client, items) {
     return result.rowCount || 0;
 }
 
+async function bulkUpdateAssetsByIds(client, assetIds, address) {
+    if (!assetIds.length || !address) return 0;
+
+    const idPlaceholders = assetIds.map((_, index) => `$${index + 3}`).join(', ');
+    const query = `
+        UPDATE "asset_exif"
+        SET "country" = '대한민국', "state" = $1, "city" = $2
+        WHERE "assetId" IN (${idPlaceholders})
+    `;
+
+    const result = await client.query(query, [address.state, address.city, ...assetIds]);
+    return result.rowCount || 0;
+}
+
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 async function main(forceUpdate = false) {
@@ -344,60 +358,68 @@ async function main(forceUpdate = false) {
         // Phase 2: API Track
         console.log(`[${nowKst()}] 🌐 Phase 2 시작: 미확인 주소만 API 처리`);
 
-        let apiProcessed = 0;
-
+        const apiTrackGroups = new Map();
         for (const row of apiTrackRows) {
-            apiProcessed++;
             const cacheKey = getCacheKey(row.latitude, row.longitude);
-            const wasCachedBeforeLookup = addressCache.has(cacheKey);
+            if (!apiTrackGroups.has(cacheKey)) {
+                apiTrackGroups.set(cacheKey, []);
+            }
+            apiTrackGroups.get(cacheKey).push(row);
+        }
 
+        console.log(`[${nowKst()}] 🗂️ API Track 좌표 그룹화 완료: ${apiTrackGroups.size}개 그룹`);
+
+        let apiProcessedGroups = 0;
+        let apiProcessedPhotos = 0;
+
+        for (const [cacheKey, rows] of apiTrackGroups.entries()) {
+            apiProcessedGroups++;
+            apiProcessedPhotos += rows.length;
+
+            const firstRow = rows[0];
             let address = null;
 
             try {
-                address = await getNaverAddress(client, row.latitude, row.longitude);
+                address = await getNaverAddress(client, firstRow.latitude, firstRow.longitude);
 
                 if (address?.source === 'memory') {
-                    apiTrackMemoryHitCount++;
+                    apiTrackMemoryHitCount += rows.length;
                 } else if (address?.source === 'api') {
                     apiCallCount++;
                 }
 
                 if (!address) {
-                    const korState = translateLocation(row.state);
-                    const korCity = translateLocation(row.city);
+                    const korState = translateLocation(firstRow.state);
+                    const korCity = translateLocation(firstRow.city);
 
                     if (korState || korCity) {
                         address = {
-                            state: korState || row.state,
-                            city: korCity || row.city,
+                            state: korState || firstRow.state,
+                            city: korCity || firstRow.city,
                             source: 'fallback',
                         };
-                        fallbackHitCount++;
+                        fallbackHitCount += rows.length;
                     }
                 }
 
                 if (address) {
-                    await client.query(
-                        `UPDATE "asset_exif"
-                         SET "country" = '대한민국', "state" = $1, "city" = $2
-                         WHERE "assetId" = $3`,
-                        [address.state, address.city, row.assetId],
-                    );
-                    apiTrackUpdated++;
-                    totalUpdated++;
+                    const assetIds = rows.map((row) => row.assetId);
+                    const updated = await bulkUpdateAssetsByIds(client, assetIds, address);
+                    apiTrackUpdated += updated;
+                    totalUpdated += updated;
                 }
             } catch (err) {
-                // 개별 row 에러는 무시하고 다음 사진으로 진행
+                // 개별 그룹 에러는 무시하고 다음 그룹으로 진행
             }
 
-            if (apiProcessed % API_TRACK_LOG_INTERVAL === 0 || apiProcessed === apiTrackRows.length) {
+            if (apiProcessedGroups % API_TRACK_LOG_INTERVAL === 0 || apiProcessedGroups === apiTrackGroups.size) {
                 console.log(
-                    `[${nowKst()}] 🌐 API Track 진행: ${apiProcessed}/${apiTrackRows.length}건 (실제 API 호출: ${apiCallCount} | 중복 좌표 메모리 재사용: ${apiTrackMemoryHitCount} | Fallback: ${fallbackHitCount} | DB 반영: ${apiTrackUpdated})`,
+                    `[${nowKst()}] 🌐 API Track 진행: ${apiProcessedGroups}/${apiTrackGroups.size}그룹, ${apiProcessedPhotos}/${apiTrackRows.length}장 (실제 API 호출: ${apiCallCount} | 중복 좌표 메모리 재사용: ${apiTrackMemoryHitCount} | Fallback: ${fallbackHitCount} | DB 반영: ${apiTrackUpdated})`,
                 );
             }
 
-            // 실제 API를 호출한 경우에만 rate limit 방어용 sleep
-            if (!wasCachedBeforeLookup && address?.source === 'api') {
+            // 실제 API를 호출한 좌표 그룹에만 rate limit 방어용 sleep
+            if (address?.source === 'api') {
                 await sleep(config.delay);
             }
         }
