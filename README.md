@@ -58,10 +58,18 @@ cd immich-naver-reverse-geocoding
 ```
 
 ### 2) 네이버 API 키 준비
-네이버 클라우드에서 Reverse Geocoding API를 활성화한 뒤 아래 값을 준비합니다.
+네이버 클라우드 플랫폼에서 **Maps / Reverse Geocoding API**를 사용할 수 있도록 애플리케이션을 만든 뒤 아래 값을 준비합니다.
 
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
+
+진행 순서는 보통 다음과 같습니다.
+- 네이버 클라우드 플랫폼 로그인
+- AI·NAVER API 또는 Maps 관련 메뉴에서 애플리케이션 생성
+- Reverse Geocoding 사용 설정
+- 발급된 Client ID / Client Secret 확인
+
+이 두 값이 없으면 이 워커는 네이버 주소 변환을 수행할 수 없습니다.
 
 ### 3) `.env` 설정
 Immich에서 실제로 사용하는 `.env` 파일에 아래를 추가합니다.
