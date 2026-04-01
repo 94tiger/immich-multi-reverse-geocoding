@@ -26,6 +26,7 @@ function startServer() {
         res.json({
             isRunning: state.isRunning,
             currentRunForce: state.currentRunForce,
+            currentRunTarget: state.currentRunTarget,
             currentRunStart: state.currentRunStart,
             lastRun: state.lastRun,
             lastStats: state.lastStats,
@@ -44,7 +45,8 @@ function startServer() {
     app.post('/api/run', async (req, res) => {
         const { triggerRun } = require('./scheduler');
         const force = req.body.force === true;
-        const result = await triggerRun(force);
+        const target = ['all', 'korea', 'world'].includes(req.body.target) ? req.body.target : 'all';
+        const result = await triggerRun(force, target);
         res.json(result);
     });
 

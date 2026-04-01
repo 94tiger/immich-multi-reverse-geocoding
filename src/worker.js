@@ -79,9 +79,10 @@ function buildFilterClause(startIdx) {
 /**
  * @param {boolean} forceUpdate - 강제 재처리 여부
  * @param {(msg: string) => void} log - 로그 출력 함수
+ * @param {'all'|'korea'|'world'} target - 처리 범위
  * @returns {Promise<object>} 실행 통계
  */
-async function runWorker(forceUpdate, log) {
+async function runWorker(forceUpdate, log, target = 'all') {
     const stats = {
         warmedCount: 0,
         koreanTotal: 0,
@@ -108,7 +109,7 @@ async function runWorker(forceUpdate, log) {
         log(`🔥 캐시 워밍업 완료: ${stats.warmedCount}건 적재`);
 
         // ── Phase 0+1+2: 한국 자산 처리 ─────────────────────────────
-        if (config.geocodingKorea !== 'disabled') {
+        if (config.geocodingKorea !== 'disabled' && (target === 'all' || target === 'korea')) {
             const { clause: filterClause, params: filterParams } = buildFilterClause(1);
             const needsJoin = filterClause !== '';
 
@@ -260,7 +261,7 @@ async function runWorker(forceUpdate, log) {
         }
 
         // ── 세계 자산 처리 (Google API) ───────────────────────────
-        if (config.geocodingWorld === 'google') {
+        if (config.geocodingWorld === 'google' && (target === 'all' || target === 'world')) {
             log(`🌍 세계 주소 처리 시작 (Google API)...`);
 
             const { clause: wFilterClause, params: wFilterParams } = buildFilterClause(1);
@@ -275,7 +276,7 @@ async function runWorker(forceUpdate, log) {
                   ${wNeedsJoin ? 'AND a."deletedAt" IS NULL' : ''}
             `;
             if (!forceUpdate) {
-                worldQuery += ` AND (ae.city IS NULL OR ae.state IS NULL)`;
+                worldQuery += ` AND (ae.city IS NULL OR ae.city !~ '[가-힣]')`;
             }
             worldQuery += ` ${wFilterClause}`;
 

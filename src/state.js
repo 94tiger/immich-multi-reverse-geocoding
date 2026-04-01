@@ -5,6 +5,7 @@ const MAX_LOGS = 1000;
 const state = {
     isRunning: false,
     currentRunForce: false,
+    currentRunTarget: 'all',
     currentRunStart: null,
     lastRun: null,
     lastStats: null,

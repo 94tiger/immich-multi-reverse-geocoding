@@ -50,7 +50,13 @@
   </div>
 
   <!-- 실행 버튼 -->
-  <div class="flex gap-3 mb-6">
+  <div class="flex flex-wrap items-center gap-3 mb-6">
+    <select id="sel-target"
+      class="bg-gray-800 text-white px-3 py-2.5 rounded-lg text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none">
+      <option value="all">전체</option>
+      <option value="korea">한국만</option>
+      <option value="world">세계만</option>
+    </select>
     <button id="btn-run"
       onclick="triggerRun(false)"
       class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-semibold transition-colors">
@@ -409,16 +415,18 @@ async function fetchLogs() {
 }
 
 async function triggerRun(force) {
+  const target = document.getElementById('sel-target').value;
+  const targetLabel = { all: '전체', korea: '한국', world: '세계' }[target];
   try {
     const res = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force }),
+      body: JSON.stringify({ force, target }),
     });
     const data = await res.json();
     if (data.error)   showToast(`오류: ${data.error}`, 'error');
     else if (!data.started) showToast(data.reason || '실행 요청 실패', 'error');
-    else showToast(force ? '강제 재처리 시작됨' : '실행 시작됨');
+    else showToast(force ? `강제 재처리 시작됨 (${targetLabel})` : `실행 시작됨 (${targetLabel})`);
     fetchStatus();
   } catch (e) {
     showToast('요청 실패: ' + e.message, 'error');
@@ -470,11 +478,12 @@ function updateStatus(data) {
   const runLabel = document.getElementById('run-label');
 
   if (data.isRunning) {
+    const tLabel = { all: '전체', korea: '한국', world: '세계' }[data.currentRunTarget] || '';
     badge.className = 'px-4 py-1.5 rounded-full text-sm font-semibold bg-green-700 text-green-100 pulse';
-    badge.textContent = data.currentRunForce ? '⚡ 강제 실행 중' : '▶ 실행 중';
+    badge.textContent = data.currentRunForce ? `⚡ 강제 실행 중 (${tLabel})` : `▶ 실행 중 (${tLabel})`;
     indicator.classList.remove('hidden');
     indicator.classList.add('flex');
-    runLabel.textContent = data.currentRunForce ? '강제 재처리 중...' : '실행 중...';
+    runLabel.textContent = data.currentRunForce ? `강제 재처리 중... (${tLabel})` : `실행 중... (${tLabel})`;
   } else {
     badge.className = 'px-4 py-1.5 rounded-full text-sm font-semibold bg-gray-800 text-gray-400';
     badge.textContent = '대기 중';

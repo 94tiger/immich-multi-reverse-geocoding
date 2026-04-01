@@ -11,7 +11,7 @@ function log(msg) {
     state.addLog(msg);
 }
 
-async function triggerRun(force = false) {
+async function triggerRun(force = false, target = 'all') {
     if (state.isRunning) {
         return { started: false, reason: '이미 실행 중입니다' };
     }
@@ -19,12 +19,14 @@ async function triggerRun(force = false) {
     const { runWorker } = require('./worker');
     state.isRunning = true;
     state.currentRunForce = force;
+    state.currentRunTarget = target;
     state.currentRunStart = Date.now();
 
-    log(force ? '🚀 강제 재처리 시작' : '🚀 실행 시작');
+    const targetLabel = { all: '전체', korea: '한국', world: '세계' }[target] || target;
+    log(force ? `🚀 강제 재처리 시작 (${targetLabel})` : `🚀 실행 시작 (${targetLabel})`);
 
     try {
-        const stats = await runWorker(force, log);
+        const stats = await runWorker(force, log, target);
         state.lastStats = stats;
         state.lastRun = Date.now();
         return { started: true };
@@ -34,6 +36,7 @@ async function triggerRun(force = false) {
     } finally {
         state.isRunning = false;
         state.currentRunForce = false;
+        state.currentRunTarget = 'all';
         state.currentRunStart = null;
     }
 }
