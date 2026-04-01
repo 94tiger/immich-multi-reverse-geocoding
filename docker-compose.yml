@@ -31,6 +31,12 @@ services:
     networks:
       - immich_default
 
+    # 로그 용량 제한 (디스크 공간 낭비 방지)
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     # Immich PostgreSQL 이 먼저 실행된 경우에만 사용 (같은 compose 파일일 때)
     # depends_on:
     #   - database
