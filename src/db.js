@@ -7,26 +7,44 @@ function createClient() {
 }
 
 async function ensureCacheTable(client) {
+    // 전용 스키마 생성
+    await client.query(`CREATE SCHEMA IF NOT EXISTS geocoding`);
+
     await client.query(`
-        CREATE TABLE IF NOT EXISTS "custom_naver_geocode_cache" (
-            "cache_key"  VARCHAR PRIMARY KEY,
-            "country"    VARCHAR,
-            "state"      VARCHAR,
-            "city"       VARCHAR,
-            "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        CREATE TABLE IF NOT EXISTS geocoding.geocode_cache (
+            cache_key  VARCHAR PRIMARY KEY,
+            country    VARCHAR,
+            state      VARCHAR,
+            city       VARCHAR,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
-    // 기존 설치 마이그레이션: country 컬럼 추가
-    await client
-        .query(`ALTER TABLE "custom_naver_geocode_cache" ADD COLUMN IF NOT EXISTS "country" VARCHAR`)
-        .catch(() => {});
+
+    // 기존 public.custom_naver_geocode_cache → geocoding.geocode_cache 마이그레이션
+    const { rows } = await client.query(`
+        SELECT to_regclass('public.custom_naver_geocode_cache') AS tbl
+    `);
+    if (rows[0].tbl) {
+        await client.query(`
+            INSERT INTO geocoding.geocode_cache (cache_key, country, state, city, updated_at)
+            SELECT cache_key,
+                   COALESCE(country, '대한민국'),
+                   state,
+                   city,
+                   updated_at
+            FROM public.custom_naver_geocode_cache
+            ON CONFLICT (cache_key) DO NOTHING
+        `);
+        await client.query(`DROP TABLE public.custom_naver_geocode_cache`);
+        console.log('[마이그레이션] public.custom_naver_geocode_cache → geocoding.geocode_cache 완료');
+    }
 }
 
 async function warmUpCache(client, memCache, ttlDays) {
     memCache.clear();
     const res = await client.query(
         `SELECT cache_key, country, state, city
-         FROM "custom_naver_geocode_cache"
+         FROM geocoding.geocode_cache
          WHERE updated_at >= CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')`,
         [ttlDays],
     );
@@ -38,7 +56,7 @@ async function warmUpCache(client, memCache, ttlDays) {
 
 async function upsertCache(client, cacheKey, address) {
     await client.query(
-        `INSERT INTO "custom_naver_geocode_cache" (cache_key, country, state, city, updated_at)
+        `INSERT INTO geocoding.geocode_cache (cache_key, country, state, city, updated_at)
          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
          ON CONFLICT (cache_key) DO UPDATE
          SET country = EXCLUDED.country,
