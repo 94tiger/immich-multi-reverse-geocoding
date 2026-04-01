@@ -17,12 +17,15 @@ const config = {
     // 웹 UI
     webPort: parseInt(env('WEB_PORT', '3000'), 10),
     webPassword: env('WEB_PASSWORD'),
-    runOnStartup: env('RUN_ON_STARTUP', 'true') !== 'false',
+    runOnStartup: env('RUN_ON_STARTUP', 'false') === 'true',
 
     // 스케줄링 (런타임 설정 우선)
     cronSchedule: runtimeOverride.cronSchedule || env('CRON_SCHEDULE', '0 2 * * *'),
     geocodingKorea: runtimeOverride.geocodingKorea || env('GEOCODING_KOREA', 'naver'),
     geocodingWorld: runtimeOverride.geocodingWorld || env('GEOCODING_WORLD', 'disabled'),
+    includeBuildingName: runtimeOverride.includeBuildingName !== undefined
+        ? runtimeOverride.includeBuildingName
+        : env('INCLUDE_BUILDING_NAME', 'false') === 'true',
 
     // Naver API
     naverId: env('NAVER_CLIENT_ID'),

@@ -64,7 +64,17 @@ async function fetchNaver(lat, lon) {
     const cityParts = [region.area2?.name, region.area3?.name, region.area4?.name].filter(
         (p) => p && p.trim(),
     );
-    const cityName = cityParts.join(' ');
+    let cityName = cityParts.join(' ');
+
+    if (config.includeBuildingName) {
+        const roadResult = parsed.results.find((r) => r.name === 'roadaddr');
+        if (roadResult?.land?.addition0?.value) {
+            const building = roadResult.land.addition0.value.trim();
+            if (building.length >= 2 && isNaN(Number(building))) {
+                cityName = `${cityName} (${building})`.trim();
+            }
+        }
+    }
 
     return { country: '대한민국', state: stateName, city: cityName };
 }

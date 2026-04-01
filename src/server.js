@@ -33,6 +33,7 @@ function startServer() {
             providers: {
                 korea: config.geocodingKorea,
                 world: config.geocodingWorld,
+                includeBuildingName: config.includeBuildingName,
                 hasNaverKey: !!config.naverId,
                 hasGoogleKey: !!config.googleApiKey,
             },
@@ -59,14 +60,15 @@ function startServer() {
             cronSchedule: config.cronSchedule,
             geocodingKorea: config.geocodingKorea,
             geocodingWorld: config.geocodingWorld,
+            includeBuildingName: config.includeBuildingName,
             hasNaverKey: !!config.naverId,
             hasGoogleKey: !!config.googleApiKey,
         });
     });
 
-    // 설정 변경 (cron, 제공자)
+    // 설정 변경 (cron, 제공자, 건물명)
     app.post('/api/config', (req, res) => {
-        const { cronSchedule, geocodingKorea, geocodingWorld } = req.body;
+        const { cronSchedule, geocodingKorea, geocodingWorld, includeBuildingName } = req.body;
         const { reschedule } = require('./scheduler');
 
         try {
@@ -93,6 +95,11 @@ function startServer() {
                 }
                 config.geocodingWorld = geocodingWorld;
                 toSave.geocodingWorld = geocodingWorld;
+            }
+
+            if (includeBuildingName !== undefined) {
+                config.includeBuildingName = !!includeBuildingName;
+                toSave.includeBuildingName = !!includeBuildingName;
             }
 
             if (Object.keys(toSave).length > 0) {

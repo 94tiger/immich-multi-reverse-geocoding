@@ -164,6 +164,22 @@
         ⚠️ Google API 키가 없습니다. .env 파일에 <code class="font-mono">GOOGLE_API_KEY=...</code>를 추가하세요.
       </div>
 
+      <!-- 건물명 포함 토글 -->
+      <div class="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 mb-3">
+        <div>
+          <div class="text-sm text-gray-200 font-medium">건물명 포함</div>
+          <div class="text-xs text-gray-500 mt-0.5">
+            city 필드에 건물명 추가 예) <span class="font-mono">강남구 삼성동 (OO빌딩)</span>
+          </div>
+        </div>
+        <button id="toggle-building"
+          onclick="toggleBuildingName()"
+          class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0">
+          <span id="toggle-building-knob"
+            class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"></span>
+        </button>
+      </div>
+
       <button onclick="saveProviders()"
         class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-semibold transition-colors">
         제공자 저장
@@ -205,6 +221,26 @@
 </style>
 
 <script>
+// ── 토글 상태 ─────────────────────────────────────────────────
+let buildingNameEnabled = false;
+
+function setToggle(enabled) {
+  buildingNameEnabled = enabled;
+  const btn  = document.getElementById('toggle-building');
+  const knob = document.getElementById('toggle-building-knob');
+  if (enabled) {
+    btn.className  = 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 bg-indigo-600';
+    knob.className = 'inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-6';
+  } else {
+    btn.className  = 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 bg-gray-600';
+    knob.className = 'inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1';
+  }
+}
+
+function toggleBuildingName() {
+  setToggle(!buildingNameEnabled);
+}
+
 // ── 상수 / 유틸 ──────────────────────────────────────────────
 const CRON_PRESETS = {
   '0 2 * * *':   '매일 새벽 2시',
@@ -301,13 +337,14 @@ async function saveSchedule() {
 }
 
 async function saveProviders() {
-  const geocodingKorea = document.getElementById('sel-korea').value;
-  const geocodingWorld = document.getElementById('sel-world').value;
+  const geocodingKorea   = document.getElementById('sel-korea').value;
+  const geocodingWorld   = document.getElementById('sel-world').value;
+  const includeBuildingName = buildingNameEnabled;
   try {
     const res = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ geocodingKorea, geocodingWorld }),
+      body: JSON.stringify({ geocodingKorea, geocodingWorld, includeBuildingName }),
     });
     const data = await res.json();
     if (data.error) showToast(`오류: ${data.error}`, 'error');
@@ -371,6 +408,11 @@ function updateStatus(data) {
       document.getElementById(id).value = data.providers?.[key] || (id === 'sel-korea' ? 'naver' : 'disabled');
     }
   });
+
+  // 건물명 토글 동기화
+  if (data.providers?.includeBuildingName !== undefined) {
+    setToggle(!!data.providers.includeBuildingName);
+  }
 
   // API 키 뱃지
   const naverBadge  = document.getElementById('naver-key-badge');
