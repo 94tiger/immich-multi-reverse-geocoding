@@ -3,7 +3,10 @@ const { Client } = require('pg');
 const config = require('./config');
 
 function createClient() {
-    return new Client(config.db);
+    return new Client({
+        ...config.db,
+        options: '-c search_path=public',
+    });
 }
 
 async function ensureCacheTable(client) {
