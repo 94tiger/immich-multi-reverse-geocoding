@@ -115,7 +115,7 @@ async function runWorker(forceUpdate, log) {
             let korQuery = `
                 SELECT ae."assetId", ae.latitude, ae.longitude, ae.country, ae.city, ae.state
                 FROM public."asset_exif" ae
-                ${needsJoin ? 'INNER JOIN public.assets a ON a.id = ae."assetId"' : ''}
+                ${needsJoin ? 'INNER JOIN public.asset a ON a.id = ae."assetId"' : ''}
                 WHERE ae.latitude BETWEEN 33 AND 43
                   AND ae.longitude BETWEEN 124 AND 132
                   AND ae.country IN ('South Korea', '대한민국', 'Korea')
@@ -269,7 +269,7 @@ async function runWorker(forceUpdate, log) {
             let worldQuery = `
                 SELECT ae."assetId", ae.latitude, ae.longitude, ae.country, ae.city, ae.state
                 FROM public."asset_exif" ae
-                ${wNeedsJoin ? 'INNER JOIN public.assets a ON a.id = ae."assetId"' : ''}
+                ${wNeedsJoin ? 'INNER JOIN public.asset a ON a.id = ae."assetId"' : ''}
                 WHERE ae.latitude IS NOT NULL AND ae.longitude IS NOT NULL
                   AND NOT (ae.latitude BETWEEN 33 AND 43 AND ae.longitude BETWEEN 124 AND 132)
                   ${wNeedsJoin ? 'AND a."deletedAt" IS NULL' : ''}
