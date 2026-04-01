@@ -66,6 +66,50 @@ function startServer() {
         });
     });
 
+    // Immich 사용자 목록 조회 (필터 UI용)
+    app.get('/api/immich/users', async (req, res) => {
+        const { createClient } = require('./db');
+        const client = createClient();
+        try {
+            await client.connect();
+            const result = await client.query(
+                `SELECT id, email, name FROM users
+                 WHERE "deletedAt" IS NULL
+                 ORDER BY name`,
+            );
+            res.json({ users: result.rows });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        } finally {
+            try { await client.end(); } catch {}
+        }
+    });
+
+    // 필터 설정 조회/저장
+    app.get('/api/filter', (req, res) => {
+        res.json({
+            filterUserIds:    config.filterUserIds,
+            filterPathPrefix: config.filterPathPrefix,
+        });
+    });
+
+    app.post('/api/filter', (req, res) => {
+        const { filterUserIds, filterPathPrefix } = req.body;
+        const toSave = {};
+
+        if (Array.isArray(filterUserIds)) {
+            config.filterUserIds = filterUserIds;
+            toSave.filterUserIds = filterUserIds;
+        }
+        if (filterPathPrefix !== undefined) {
+            config.filterPathPrefix = filterPathPrefix;
+            toSave.filterPathPrefix = filterPathPrefix;
+        }
+
+        config.saveRuntime(toSave);
+        res.json({ success: true });
+    });
+
     // 연결 상태 헬스체크 (시작 시 1회만 실행, 이후 캐시 반환)
     // 테스트 좌표: 서울시청 (37.5665, 126.9780)
     const TEST_LAT = 37.5665;

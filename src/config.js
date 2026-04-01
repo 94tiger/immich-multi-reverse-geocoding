@@ -27,6 +27,12 @@ const config = {
         ? runtimeOverride.includeBuildingName
         : env('INCLUDE_BUILDING_NAME', 'false') === 'true',
 
+    // 필터 (런타임 설정 우선, 비어있으면 전체 대상)
+    filterUserIds: runtimeOverride.filterUserIds
+        ?? (env('FILTER_USER_IDS') ? env('FILTER_USER_IDS').split(',').map(s => s.trim()).filter(Boolean) : []),
+    filterPathPrefix: runtimeOverride.filterPathPrefix
+        ?? env('FILTER_PATH_PREFIX', ''),
+
     // Naver API
     naverId: env('NAVER_CLIENT_ID'),
     naverSecret: env('NAVER_CLIENT_SECRET'),

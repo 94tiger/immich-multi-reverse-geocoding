@@ -49,6 +49,31 @@ function translateLocation(engName) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * 사용자/경로 필터 조건과 파라미터를 반환한다.
+ * @param {number} startIdx - 다음 placeholder 번호 시작값 ($1 기준)
+ * @returns {{ clause: string, params: any[] }}
+ */
+function buildFilterClause(startIdx) {
+    const parts = [];
+    const params = [];
+    let idx = startIdx;
+
+    if (config.filterUserIds?.length > 0) {
+        params.push(config.filterUserIds);
+        parts.push(`a."ownerId" = ANY($${idx++}::uuid[])`);
+    }
+    if (config.filterPathPrefix) {
+        params.push(config.filterPathPrefix + '%');
+        parts.push(`a."originalPath" LIKE $${idx++}`);
+    }
+
+    return {
+        clause: parts.length > 0 ? 'AND ' + parts.join(' AND ') : '',
+        params,
+    };
+}
+
+/**
  * @param {boolean} forceUpdate - 강제 재처리 여부
  * @param {(msg: string) => void} log - 로그 출력 함수
  * @returns {Promise<object>} 실행 통계
@@ -81,18 +106,24 @@ async function runWorker(forceUpdate, log) {
 
         // ── Phase 0+1+2: 한국 자산 처리 ─────────────────────────────
         if (config.geocodingKorea !== 'disabled') {
+            const { clause: filterClause, params: filterParams } = buildFilterClause(1);
+            const needsJoin = filterClause !== '';
+
             let korQuery = `
-                SELECT "assetId", latitude, longitude, country, city, state
-                FROM "asset_exif"
-                WHERE latitude BETWEEN 33 AND 43
-                  AND longitude BETWEEN 124 AND 132
-                  AND country IN ('South Korea', '대한민국', 'Korea')
+                SELECT ae."assetId", ae.latitude, ae.longitude, ae.country, ae.city, ae.state
+                FROM "asset_exif" ae
+                ${needsJoin ? 'INNER JOIN assets a ON a.id = ae."assetId"' : ''}
+                WHERE ae.latitude BETWEEN 33 AND 43
+                  AND ae.longitude BETWEEN 124 AND 132
+                  AND ae.country IN ('South Korea', '대한민국', 'Korea')
+                  ${needsJoin ? 'AND a."deletedAt" IS NULL' : ''}
             `;
             if (!forceUpdate) {
-                korQuery += ` AND (city IS NULL OR city !~ '[가-힣]')`;
+                korQuery += ` AND (ae.city IS NULL OR ae.city !~ '[가-힣]')`;
             }
+            korQuery += ` ${filterClause}`;
 
-            const korRes = await client.query(korQuery);
+            const korRes = await client.query(korQuery, filterParams);
             stats.koreanTotal = korRes.rows.length;
 
             if (korRes.rows.length === 0) {
@@ -229,17 +260,23 @@ async function runWorker(forceUpdate, log) {
         if (config.geocodingWorld === 'google') {
             log(`🌍 세계 주소 처리 시작 (Google API)...`);
 
+            const { clause: wFilterClause, params: wFilterParams } = buildFilterClause(1);
+            const wNeedsJoin = wFilterClause !== '';
+
             let worldQuery = `
-                SELECT "assetId", latitude, longitude, country, city, state
-                FROM "asset_exif"
-                WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-                  AND NOT (latitude BETWEEN 33 AND 43 AND longitude BETWEEN 124 AND 132)
+                SELECT ae."assetId", ae.latitude, ae.longitude, ae.country, ae.city, ae.state
+                FROM "asset_exif" ae
+                ${wNeedsJoin ? 'INNER JOIN assets a ON a.id = ae."assetId"' : ''}
+                WHERE ae.latitude IS NOT NULL AND ae.longitude IS NOT NULL
+                  AND NOT (ae.latitude BETWEEN 33 AND 43 AND ae.longitude BETWEEN 124 AND 132)
+                  ${wNeedsJoin ? 'AND a."deletedAt" IS NULL' : ''}
             `;
             if (!forceUpdate) {
-                worldQuery += ` AND (city IS NULL OR state IS NULL)`;
+                worldQuery += ` AND (ae.city IS NULL OR ae.state IS NULL)`;
             }
+            worldQuery += ` ${wFilterClause}`;
 
-            const worldRes = await client.query(worldQuery);
+            const worldRes = await client.query(worldQuery, wFilterParams);
             stats.worldTotal = worldRes.rows.length;
             log(`🌍 세계 대상: ${worldRes.rows.length}건`);
 
