@@ -1,5 +1,9 @@
 # Immich Multi Reverse Geocoding
 
+[![Docker Hub](https://img.shields.io/docker/pulls/94tiger/immich-multi-reverse-geocoding?logo=docker&label=Docker+Hub&color=0db7ed)](https://hub.docker.com/r/94tiger/immich-multi-reverse-geocoding)
+[![Docker Image Size](https://img.shields.io/docker/image-size/94tiger/immich-multi-reverse-geocoding/latest?logo=docker&color=0db7ed)](https://hub.docker.com/r/94tiger/immich-multi-reverse-geocoding)
+[![GitHub Release](https://img.shields.io/github/v/release/lscya84/immich-naver-reverse-geocoding?logo=github&color=4f46e5)](https://github.com/lscya84/immich-naver-reverse-geocoding/releases)
+
 Immich 사진의 위치 정보를 한국어 주소로 보정하는 사이드카 워커입니다.
 
 - **한국 사진**: 네이버 Reverse Geocoding으로 읍/면/동 단위 한글 주소 보정
