@@ -292,6 +292,15 @@
 // ── 토글 상태 ─────────────────────────────────────────────────
 let buildingNameEnabled = false;
 
+// ── 제공자 수정 중 플래그 (폴링이 덮어쓰지 않도록) ────────────
+let providerDirty = false;
+function markProviderDirty() { providerDirty = true; }
+document.addEventListener('DOMContentLoaded', () => {
+  ['sel-korea', 'sel-world'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', markProviderDirty);
+  });
+});
+
 // ── 경로 필터 목록 ────────────────────────────────────────────
 let pathPrefixes = [];
 
@@ -446,7 +455,7 @@ async function saveProviders() {
     });
     const data = await res.json();
     if (data.error) showToast(`오류: ${data.error}`, 'error');
-    else showToast('제공자 설정이 저장되었습니다');
+    else { providerDirty = false; showToast('제공자 설정이 저장되었습니다'); }
     fetchStatus();
   } catch (e) {
     showToast('요청 실패: ' + e.message, 'error');
@@ -499,17 +508,13 @@ function updateStatus(data) {
   document.getElementById('provider-world').textContent =
     `세계: ${LABELS[data.providers?.world] || '비활성화'}`;
 
-  // 제공자 선택 (포커스 아닐 때만 동기화)
-  ['sel-korea', 'sel-world'].forEach(id => {
-    if (document.activeElement !== document.getElementById(id)) {
-      const key = id === 'sel-korea' ? 'korea' : 'world';
-      document.getElementById(id).value = data.providers?.[key] || (id === 'sel-korea' ? 'naver' : 'disabled');
+  // 제공자 선택 (사용자가 수정 중이 아닐 때만 동기화)
+  if (!providerDirty) {
+    document.getElementById('sel-korea').value = data.providers?.korea || 'naver';
+    document.getElementById('sel-world').value = data.providers?.world || 'disabled';
+    if (data.providers?.includeBuildingName !== undefined) {
+      setToggle(!!data.providers.includeBuildingName);
     }
-  });
-
-  // 건물명 토글 동기화
-  if (data.providers?.includeBuildingName !== undefined) {
-    setToggle(!!data.providers.includeBuildingName);
   }
 
   // API 키 뱃지
