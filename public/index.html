@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Immich Reverse Geocoding</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .log-line { line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  select option { background: #1f2937; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+<div class="max-w-5xl mx-auto px-4 py-8">
+
+  <!-- 헤더 -->
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+        <span>📍</span> Immich Reverse Geocoding
+      </h1>
+      <p class="text-gray-500 text-sm mt-1">Naver &amp; Google Maps 역지오코딩 관리 대시보드</p>
+    </div>
+    <div id="status-badge" class="px-4 py-1.5 rounded-full text-sm font-semibold bg-gray-800 text-gray-400">
+      연결 중...
+    </div>
+  </div>
+
+  <!-- 상태 카드 행 -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div class="text-gray-500 text-xs mb-2">마지막 실행</div>
+      <div id="last-run" class="text-white font-medium text-sm">-</div>
+      <div id="last-duration" class="text-gray-500 text-xs mt-1"></div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div class="text-gray-500 text-xs mb-2">스케줄</div>
+      <div id="cron-display" class="text-white font-mono text-sm">-</div>
+      <div id="cron-desc" class="text-gray-500 text-xs mt-1"></div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div class="text-gray-500 text-xs mb-2">제공자</div>
+      <div id="provider-korea" class="text-white text-sm">-</div>
+      <div id="provider-world" class="text-gray-500 text-sm mt-1">-</div>
+    </div>
+  </div>
+
+  <!-- 실행 버튼 -->
+  <div class="flex gap-3 mb-6">
+    <button id="btn-run"
+      onclick="triggerRun(false)"
+      class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-semibold transition-colors">
+      ▶&nbsp; 지금 실행
+    </button>
+    <button id="btn-force"
+      onclick="triggerRun(true)"
+      class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-semibold transition-colors">
+      ⚡&nbsp; 강제 재처리
+    </button>
+    <div id="run-indicator" class="hidden items-center gap-2 text-green-400 text-sm">
+      <span class="inline-block w-2 h-2 bg-green-400 rounded-full pulse"></span>
+      <span id="run-label">실행 중...</span>
+    </div>
+  </div>
+
+  <!-- 마지막 실행 통계 -->
+  <div id="stats-section" class="hidden mb-6">
+    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">마지막 실행 결과</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">총 DB 반영</div>
+        <div id="stat-total" class="text-2xl font-bold text-white mt-1">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">Fast Track</div>
+        <div id="stat-fast" class="text-2xl font-bold text-emerald-400 mt-1">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">API Track (한국)</div>
+        <div id="stat-api-track" class="text-2xl font-bold text-blue-400 mt-1">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">세계 (Google)</div>
+        <div id="stat-world" class="text-2xl font-bold text-violet-400 mt-1">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">API 호출 수</div>
+        <div id="stat-api-calls" class="text-2xl font-bold text-yellow-400 mt-1">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">캐시 워밍업</div>
+        <div id="stat-cache" class="text-2xl font-bold text-cyan-400 mt-1">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">Fallback 번역</div>
+        <div id="stat-fallback" class="text-2xl font-bold text-orange-400 mt-1">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-3">
+        <div class="text-gray-500 text-xs">소요 시간</div>
+        <div id="stat-duration" class="text-2xl font-bold text-gray-400 mt-1">-</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 설정 패널 -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-5">설정</h2>
+
+    <!-- 스케줄 -->
+    <div class="mb-6">
+      <label class="block text-sm font-medium text-gray-300 mb-2">스케줄 (Cron 표현식)</label>
+      <div class="flex gap-2 mb-2">
+        <input id="cron-input" type="text" placeholder="0 2 * * *" spellcheck="false"
+          class="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-mono border border-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        <button onclick="saveSchedule()"
+          class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap">
+          저장
+        </button>
+      </div>
+      <div id="cron-preview" class="text-gray-500 text-xs mb-3 h-4"></div>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="setCron('0 2 * * *')"   class="cron-preset">매일 새벽 2시</button>
+        <button onclick="setCron('0 0 * * *')"   class="cron-preset">매일 자정</button>
+        <button onclick="setCron('0 */6 * * *')" class="cron-preset">6시간마다</button>
+        <button onclick="setCron('0 * * * *')"   class="cron-preset">매 시간</button>
+        <button onclick="setCron('0 2 * * 0')"   class="cron-preset">매주 일요일 새벽 2시</button>
+      </div>
+    </div>
+
+    <!-- 제공자 -->
+    <div>
+      <label class="block text-sm font-medium text-gray-300 mb-3">지오코딩 제공자</label>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+        <div>
+          <label class="block text-gray-500 text-xs mb-1.5">한국 (위도 33–43, 경도 124–132)</label>
+          <select id="sel-korea"
+            class="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none">
+            <option value="naver">Naver Maps API (한국어, 권장)</option>
+            <option value="google">Google Maps API</option>
+            <option value="disabled">비활성화</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-gray-500 text-xs mb-1.5">한국 외 지역</label>
+          <select id="sel-world"
+            class="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none">
+            <option value="disabled">비활성화 (Immich 기본 사용)</option>
+            <option value="google">Google Maps API (한국어 결과)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- API 키 상태 -->
+      <div id="key-status" class="flex flex-wrap gap-3 mb-3 text-xs">
+        <span id="naver-key-badge" class="px-2 py-1 rounded-md">Naver 키: 확인 중</span>
+        <span id="google-key-badge" class="px-2 py-1 rounded-md">Google 키: 확인 중</span>
+      </div>
+
+      <div id="google-warning" class="hidden bg-yellow-900/30 border border-yellow-800 rounded-lg px-3 py-2 text-yellow-400 text-xs mb-3">
+        ⚠️ Google API 키가 없습니다. .env 파일에 <code class="font-mono">GOOGLE_API_KEY=...</code>를 추가하세요.
+      </div>
+
+      <button onclick="saveProviders()"
+        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-semibold transition-colors">
+        제공자 저장
+      </button>
+    </div>
+  </div>
+
+  <!-- 로그 -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">실시간 로그</h2>
+      <button onclick="clearLogs()"
+        class="text-gray-600 hover:text-gray-400 text-xs transition-colors">
+        지우기
+      </button>
+    </div>
+    <div id="log-container"
+      class="bg-gray-950 rounded-lg p-3 h-80 overflow-y-auto font-mono text-xs text-gray-400 space-y-px">
+      <div class="text-gray-600 log-line">로그를 기다리는 중...</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 알림 토스트 -->
+<div id="toast" class="hidden fixed bottom-6 right-6 px-4 py-3 rounded-lg text-sm font-medium shadow-lg transition-opacity"></div>
+
+<style>
+  .cron-preset {
+    padding: 0.25rem 0.625rem;
+    background: #1f2937;
+    color: #9ca3af;
+    font-size: 0.75rem;
+    border-radius: 0.375rem;
+    transition: background 0.15s;
+    border: 1px solid #374151;
+  }
+  .cron-preset:hover { background: #374151; color: #d1d5db; }
+</style>
+
+<script>
+// ── 상수 / 유틸 ──────────────────────────────────────────────
+const CRON_PRESETS = {
+  '0 2 * * *':   '매일 새벽 2시',
+  '0 0 * * *':   '매일 자정',
+  '0 */6 * * *': '6시간마다',
+  '0 * * * *':   '매 시간',
+  '0 2 * * 0':   '매주 일요일 새벽 2시',
+};
+
+let lastLogTime = 0;
+let isAtBottom = true;
+
+const logEl = document.getElementById('log-container');
+logEl.addEventListener('scroll', () => {
+  isAtBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
+});
+
+function fmt(ts) {
+  if (!ts) return '-';
+  return new Date(ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+}
+
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return '-';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}초`;
+  return `${Math.floor(s / 60)}분 ${s % 60}초`;
+}
+
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `fixed bottom-6 right-6 px-4 py-3 rounded-lg text-sm font-medium shadow-lg z-50 ${
+    type === 'error' ? 'bg-red-800 text-red-100' : 'bg-emerald-800 text-emerald-100'
+  }`;
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+// ── API 호출 ─────────────────────────────────────────────────
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    updateStatus(await res.json());
+  } catch {}
+}
+
+async function fetchLogs() {
+  try {
+    const res = await fetch(`/api/logs?since=${lastLogTime}`);
+    if (!res.ok) return;
+    const { logs } = await res.json();
+    if (logs && logs.length > 0) {
+      appendLogs(logs);
+      lastLogTime = Math.max(...logs.map(l => l.time));
+    }
+  } catch {}
+}
+
+async function triggerRun(force) {
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+    });
+    const data = await res.json();
+    if (data.error)   showToast(`오류: ${data.error}`, 'error');
+    else if (!data.started) showToast(data.reason || '실행 요청 실패', 'error');
+    else showToast(force ? '강제 재처리 시작됨' : '실행 시작됨');
+    fetchStatus();
+  } catch (e) {
+    showToast('요청 실패: ' + e.message, 'error');
+  }
+}
+
+async function saveSchedule() {
+  const cronSchedule = document.getElementById('cron-input').value.trim();
+  if (!cronSchedule) return;
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cronSchedule }),
+    });
+    const data = await res.json();
+    if (data.error) showToast(`오류: ${data.error}`, 'error');
+    else showToast('스케줄이 저장되었습니다');
+    fetchStatus();
+  } catch (e) {
+    showToast('요청 실패: ' + e.message, 'error');
+  }
+}
+
+async function saveProviders() {
+  const geocodingKorea = document.getElementById('sel-korea').value;
+  const geocodingWorld = document.getElementById('sel-world').value;
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geocodingKorea, geocodingWorld }),
+    });
+    const data = await res.json();
+    if (data.error) showToast(`오류: ${data.error}`, 'error');
+    else showToast('제공자 설정이 저장되었습니다');
+    fetchStatus();
+  } catch (e) {
+    showToast('요청 실패: ' + e.message, 'error');
+  }
+}
+
+// ── UI 업데이트 ───────────────────────────────────────────────
+function updateStatus(data) {
+  // 상태 뱃지
+  const badge = document.getElementById('status-badge');
+  const indicator = document.getElementById('run-indicator');
+  const runLabel = document.getElementById('run-label');
+
+  if (data.isRunning) {
+    badge.className = 'px-4 py-1.5 rounded-full text-sm font-semibold bg-green-700 text-green-100 pulse';
+    badge.textContent = data.currentRunForce ? '⚡ 강제 실행 중' : '▶ 실행 중';
+    indicator.classList.remove('hidden');
+    indicator.classList.add('flex');
+    runLabel.textContent = data.currentRunForce ? '강제 재처리 중...' : '실행 중...';
+  } else {
+    badge.className = 'px-4 py-1.5 rounded-full text-sm font-semibold bg-gray-800 text-gray-400';
+    badge.textContent = '대기 중';
+    indicator.classList.add('hidden');
+    indicator.classList.remove('flex');
+  }
+
+  document.getElementById('btn-run').disabled   = data.isRunning;
+  document.getElementById('btn-force').disabled = data.isRunning;
+
+  // 마지막 실행
+  document.getElementById('last-run').textContent = data.lastRun ? fmt(data.lastRun) : '-';
+  if (data.lastStats?.endTime && data.lastStats?.startTime) {
+    document.getElementById('last-duration').textContent =
+      `소요: ${fmtDuration(data.lastStats.endTime - data.lastStats.startTime)}`;
+  }
+
+  // 스케줄
+  const cron = data.cronSchedule || '';
+  document.getElementById('cron-display').textContent = cron || '-';
+  document.getElementById('cron-desc').textContent = CRON_PRESETS[cron] || '';
+  if (document.activeElement !== document.getElementById('cron-input')) {
+    document.getElementById('cron-input').value = cron;
+    updateCronPreview(cron);
+  }
+
+  // 제공자
+  const LABELS = { naver: 'Naver Maps', google: 'Google Maps', disabled: '비활성화' };
+  document.getElementById('provider-korea').textContent =
+    `한국: ${LABELS[data.providers?.korea] || '-'}`;
+  document.getElementById('provider-world').textContent =
+    `세계: ${LABELS[data.providers?.world] || '비활성화'}`;
+
+  // 제공자 선택 (포커스 아닐 때만 동기화)
+  ['sel-korea', 'sel-world'].forEach(id => {
+    if (document.activeElement !== document.getElementById(id)) {
+      const key = id === 'sel-korea' ? 'korea' : 'world';
+      document.getElementById(id).value = data.providers?.[key] || (id === 'sel-korea' ? 'naver' : 'disabled');
+    }
+  });
+
+  // API 키 뱃지
+  const naverBadge  = document.getElementById('naver-key-badge');
+  const googleBadge = document.getElementById('google-key-badge');
+  if (data.providers?.hasNaverKey) {
+    naverBadge.className  = 'px-2 py-1 rounded-md bg-green-900/50 text-green-400';
+    naverBadge.textContent = 'Naver 키: ✓ 설정됨';
+  } else {
+    naverBadge.className  = 'px-2 py-1 rounded-md bg-red-900/50 text-red-400';
+    naverBadge.textContent = 'Naver 키: ✗ 없음';
+  }
+  if (data.providers?.hasGoogleKey) {
+    googleBadge.className  = 'px-2 py-1 rounded-md bg-green-900/50 text-green-400';
+    googleBadge.textContent = 'Google 키: ✓ 설정됨';
+  } else {
+    googleBadge.className  = 'px-2 py-1 rounded-md bg-gray-800 text-gray-500';
+    googleBadge.textContent = 'Google 키: 미설정';
+  }
+
+  const needsGoogle =
+    data.providers?.korea === 'google' || data.providers?.world === 'google';
+  document.getElementById('google-warning').classList.toggle(
+    'hidden',
+    !needsGoogle || !!data.providers?.hasGoogleKey,
+  );
+
+  // 통계
+  if (data.lastStats) {
+    const s = data.lastStats;
+    document.getElementById('stats-section').classList.remove('hidden');
+    document.getElementById('stat-total').textContent     = (s.totalUpdated ?? 0).toLocaleString();
+    document.getElementById('stat-fast').textContent      = (s.fastTrackUpdated ?? 0).toLocaleString();
+    document.getElementById('stat-api-track').textContent = (s.apiTrackUpdated ?? 0).toLocaleString();
+    document.getElementById('stat-world').textContent     = (s.worldUpdated ?? 0).toLocaleString();
+    document.getElementById('stat-api-calls').textContent = (s.apiCallCount ?? 0).toLocaleString();
+    document.getElementById('stat-cache').textContent     = (s.warmedCount ?? 0).toLocaleString();
+    document.getElementById('stat-fallback').textContent  = (s.fallbackHitCount ?? 0).toLocaleString();
+    document.getElementById('stat-duration').textContent  =
+      s.endTime && s.startTime ? fmtDuration(s.endTime - s.startTime) : '-';
+  }
+}
+
+// ── 로그 ─────────────────────────────────────────────────────
+function appendLogs(logs) {
+  const container = document.getElementById('log-container');
+
+  // 초기 안내 문구 제거
+  const placeholder = container.querySelector('.text-gray-600');
+  if (placeholder) placeholder.remove();
+
+  for (const log of logs) {
+    const div = document.createElement('div');
+    div.className = 'log-line ';
+
+    if (log.text.includes('❌'))               div.className += 'text-red-400';
+    else if (log.text.includes('✅') || log.text.includes('🎉')) div.className += 'text-emerald-400';
+    else if (log.text.includes('⚡'))           div.className += 'text-yellow-400';
+    else if (log.text.includes('🌐') || log.text.includes('🌍')) div.className += 'text-blue-400';
+    else if (log.text.includes('🔥'))           div.className += 'text-orange-400';
+    else if (log.text.includes('🚀'))           div.className += 'text-green-400';
+    else if (log.text.includes(' ├─') || log.text.includes(' └─')) div.className += 'text-gray-500';
+    else                                         div.className += 'text-gray-300';
+
+    const time = new Date(log.time).toLocaleTimeString('ko-KR');
+    div.textContent = `[${time}] ${log.text}`;
+    container.appendChild(div);
+  }
+
+  // DOM 항목 최대 300개 유지
+  while (container.children.length > 300) {
+    container.removeChild(container.firstChild);
+  }
+
+  if (isAtBottom) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function clearLogs() {
+  const container = document.getElementById('log-container');
+  container.innerHTML = '<div class="text-gray-600 log-line">로그가 지워졌습니다.</div>';
+  lastLogTime = Date.now();
+}
+
+// ── Cron 프리뷰 ──────────────────────────────────────────────
+function setCron(expr) {
+  document.getElementById('cron-input').value = expr;
+  updateCronPreview(expr);
+}
+
+function updateCronPreview(expr) {
+  document.getElementById('cron-preview').textContent = CRON_PRESETS[expr] || '';
+}
+
+document.getElementById('cron-input').addEventListener('input', e => updateCronPreview(e.target.value));
+
+// ── 폴링 시작 ────────────────────────────────────────────────
+fetchStatus();
+fetchLogs();
+setInterval(fetchStatus, 3000);
+setInterval(fetchLogs, 2000);
+</script>
+</body>
+</html>

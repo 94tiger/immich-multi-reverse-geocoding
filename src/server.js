@@ -1,0 +1,114 @@
+'use strict';
+const express = require('express');
+const path = require('path');
+const config = require('./config');
+const state = require('./state');
+
+function startServer() {
+    const app = express();
+    app.use(express.json());
+    app.use(express.static(path.join(__dirname, '..', 'public')));
+
+    // 선택적 Bearer 토큰 인증
+    if (config.webPassword) {
+        app.use('/api', (req, res, next) => {
+            const auth = req.headers.authorization || '';
+            const [type, token] = auth.split(' ');
+            if ((type === 'Bearer' && token === config.webPassword) || req.query.token === config.webPassword) {
+                return next();
+            }
+            return res.status(401).json({ error: '인증 필요' });
+        });
+    }
+
+    // 현재 상태
+    app.get('/api/status', (req, res) => {
+        res.json({
+            isRunning: state.isRunning,
+            currentRunForce: state.currentRunForce,
+            currentRunStart: state.currentRunStart,
+            lastRun: state.lastRun,
+            lastStats: state.lastStats,
+            cronSchedule: state.cronSchedule,
+            providers: {
+                korea: config.geocodingKorea,
+                world: config.geocodingWorld,
+                hasNaverKey: !!config.naverId,
+                hasGoogleKey: !!config.googleApiKey,
+            },
+        });
+    });
+
+    // 수동 실행 트리거
+    app.post('/api/run', async (req, res) => {
+        const { triggerRun } = require('./scheduler');
+        const force = req.body.force === true;
+        const result = await triggerRun(force);
+        res.json(result);
+    });
+
+    // 로그 조회 (since: 타임스탬프 ms)
+    app.get('/api/logs', (req, res) => {
+        const since = parseInt(req.query.since || '0', 10);
+        res.json({ logs: state.getLogs(since) });
+    });
+
+    // 설정 조회
+    app.get('/api/config', (req, res) => {
+        res.json({
+            cronSchedule: config.cronSchedule,
+            geocodingKorea: config.geocodingKorea,
+            geocodingWorld: config.geocodingWorld,
+            hasNaverKey: !!config.naverId,
+            hasGoogleKey: !!config.googleApiKey,
+        });
+    });
+
+    // 설정 변경 (cron, 제공자)
+    app.post('/api/config', (req, res) => {
+        const { cronSchedule, geocodingKorea, geocodingWorld } = req.body;
+        const { reschedule } = require('./scheduler');
+
+        try {
+            const toSave = {};
+
+            if (cronSchedule !== undefined) {
+                reschedule(cronSchedule);
+                toSave.cronSchedule = cronSchedule;
+            }
+
+            if (geocodingKorea !== undefined) {
+                const valid = ['naver', 'google', 'disabled'];
+                if (!valid.includes(geocodingKorea)) {
+                    return res.status(400).json({ error: '유효하지 않은 한국 제공자 값' });
+                }
+                config.geocodingKorea = geocodingKorea;
+                toSave.geocodingKorea = geocodingKorea;
+            }
+
+            if (geocodingWorld !== undefined) {
+                const valid = ['google', 'disabled'];
+                if (!valid.includes(geocodingWorld)) {
+                    return res.status(400).json({ error: '유효하지 않은 세계 제공자 값' });
+                }
+                config.geocodingWorld = geocodingWorld;
+                toSave.geocodingWorld = geocodingWorld;
+            }
+
+            if (Object.keys(toSave).length > 0) {
+                config.saveRuntime(toSave);
+            }
+
+            res.json({ success: true });
+        } catch (err) {
+            res.status(400).json({ error: err.message });
+        }
+    });
+
+    const port = config.webPort;
+    app.listen(port, () => {
+        console.log(`🌐 웹 UI: http://localhost:${port}`);
+    });
+}
+
+module.exports = { startServer };
