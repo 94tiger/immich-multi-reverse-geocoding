@@ -101,17 +101,26 @@ async function fetchGoogle(lat, lon) {
     const state = getComp('administrative_area_level_1');
     const level2 = getComp('administrative_area_level_2');
     const locality = getComp('locality');
+    const sublocality1 = getComp('sublocality_level_1');
 
     // 일본은 郡(level_2)과 市町村(locality)를 둘 다 포함 (예: 쿠니가미군 온나촌)
     // 그 외 국가는 locality 우선, 없을 때만 level_2 사용 (County/Landkreis 중복 방지)
     const cityParts = [
         ...(countryCode === 'JP' ? [level2, locality] : [locality || level2]),
-        getComp('sublocality_level_1'),
+        sublocality1,
     ].filter(Boolean)
      .filter((v, i, arr) => arr.indexOf(v) === i) // 중복 제거
      .filter(v => v !== state);                   // state와 중복 제거 (중국 직할시 등)
 
-    return { country: country || null, state: state || null, city: cityParts.join(' ') || null };
+    return {
+        country:      country      || null,
+        countryCode:  countryCode  || null,
+        state:        state        || null,
+        level2:       level2       || null,
+        locality:     locality     || null,
+        sublocality1: sublocality1 || null,
+        city:         cityParts.join(' ') || null,
+    };
 }
 
 async function fetchAddress(lat, lon) {
