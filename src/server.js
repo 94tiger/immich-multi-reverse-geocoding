@@ -79,6 +79,7 @@ function startServer() {
             );
             res.json({ users: result.rows });
         } catch (e) {
+            console.error('[사용자 목록 오류]', e.message);
             res.status(500).json({ error: e.message });
         } finally {
             try { await client.end(); } catch {}

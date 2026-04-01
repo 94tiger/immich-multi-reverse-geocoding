@@ -582,8 +582,15 @@ async function loadUsers() {
       fetch('/api/immich/users'),
       fetch('/api/filter'),
     ]);
-    const { users } = await usersRes.json();
+    const usersData = await usersRes.json();
     const filter = await filterRes.json();
+
+    if (!usersRes.ok || usersData.error) {
+      container.innerHTML = `<span class="text-red-400 not-italic">오류: ${usersData.error || '알 수 없는 오류'}</span>`;
+      return;
+    }
+
+    const { users } = usersData;
     selectedUserIds = filter.filterUserIds || [];
     document.getElementById('filter-path').value = filter.filterPathPrefix || '';
 
