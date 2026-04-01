@@ -73,7 +73,7 @@ function startServer() {
         try {
             await client.connect();
             const result = await client.query(
-                `SELECT id, email, name FROM users
+                `SELECT id, email, name FROM "user"
                  WHERE "deletedAt" IS NULL
                  ORDER BY name`,
             );
