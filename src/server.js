@@ -66,6 +66,64 @@ function startServer() {
         });
     });
 
+    // 연결 상태 헬스체크 (시작 시 1회만 실행, 이후 캐시 반환)
+    // 테스트 좌표: 서울시청 (37.5665, 126.9780)
+    const TEST_LAT = 37.5665;
+    const TEST_LON = 126.9780;
+    let healthCache = null;
+
+    async function runHealthCheck() {
+        const { fetchNaver, fetchGoogle } = require('./geocoder');
+        const { createClient } = require('./db');
+
+        const result = {
+            db:     { ok: false, detail: '' },
+            naver:  { ok: null,  detail: '키 미설정' },
+            google: { ok: null,  detail: '키 미설정' },
+            checkedAt: Date.now(),
+        };
+
+        const client = createClient();
+        try {
+            await client.connect();
+            await client.query('SELECT 1');
+            result.db = { ok: true, detail: '연결됨' };
+        } catch (e) {
+            result.db = { ok: false, detail: e.message };
+        } finally {
+            try { await client.end(); } catch {}
+        }
+
+        if (config.naverId && config.naverSecret) {
+            try {
+                const addr = await fetchNaver(TEST_LAT, TEST_LON);
+                result.naver = addr?.state
+                    ? { ok: true,  detail: addr.state }
+                    : { ok: false, detail: '응답 없음 (키 오류)' };
+            } catch (e) {
+                result.naver = { ok: false, detail: e.message };
+            }
+        }
+
+        if (config.googleApiKey) {
+            try {
+                const addr = await fetchGoogle(TEST_LAT, TEST_LON);
+                result.google = addr?.state
+                    ? { ok: true,  detail: addr.state }
+                    : { ok: false, detail: '응답 없음 (키 오류)' };
+            } catch (e) {
+                result.google = { ok: false, detail: e.message };
+            }
+        }
+
+        healthCache = result;
+    }
+
+    app.get('/api/health', (req, res) => {
+        if (!healthCache) return res.json({ checking: true });
+        res.json(healthCache);
+    });
+
     // 설정 변경 (cron, 제공자, 건물명)
     app.post('/api/config', (req, res) => {
         const { cronSchedule, geocodingKorea, geocodingWorld, includeBuildingName } = req.body;
@@ -115,6 +173,8 @@ function startServer() {
     const port = config.webPort;
     app.listen(port, () => {
         console.log(`🌐 웹 UI: http://localhost:${port}`);
+        // 시작 시 1회만 헬스체크 실행
+        runHealthCheck().catch((e) => console.error('헬스체크 오류:', e.message));
     });
 }
 
