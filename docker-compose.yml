@@ -1,0 +1,47 @@
+# Immich Multi Reverse Geocoding - docker-compose.yml
+#
+# [사용 방법]
+# 1. .env.example → .env 복사 후 값 입력
+# 2. 아래 networks.immich_default.name 을 실제 Immich 네트워크 이름으로 변경
+#    (확인 방법: docker network ls | grep immich)
+# 3. docker compose up -d
+#
+# [Immich docker-compose.yml 에 합칠 경우]
+# 아래 services 블록을 기존 Immich compose 파일에 붙여넣고
+# networks 섹션은 제거하세요 (이미 있으므로)
+
+services:
+  immich-reverse-geocoding:
+    image: 94tiger/immich-multi-reverse-geocoding:latest
+    container_name: immich_reverse_geocoding
+    restart: unless-stopped
+
+    # 웹 관리 UI 포트 (http://서버IP:3000)
+    ports:
+      - "3000:3000"
+
+    # .env 파일로 설정 주입
+    env_file:
+      - .env
+
+    volumes:
+      # 런타임 설정 영구 저장 (cron 스케줄, 제공자 변경 사항)
+      - geocoding-data:/data
+
+    networks:
+      - immich_default
+
+    # Immich PostgreSQL 이 먼저 실행된 경우에만 사용 (같은 compose 파일일 때)
+    # depends_on:
+    #   - database
+
+volumes:
+  geocoding-data:
+    driver: local
+
+networks:
+  immich_default:
+    # 기존 Immich 네트워크에 연결 (external: true 로 외부 네트워크 참조)
+    # docker network ls 로 이름 확인 후 name 값 수정
+    external: true
+    name: immich_default
