@@ -62,9 +62,12 @@ function buildFilterClause(startIdx) {
         params.push(config.filterUserIds);
         parts.push(`a."ownerId" = ANY($${idx++}::uuid[])`);
     }
-    if (config.filterPathPrefix) {
-        params.push(config.filterPathPrefix + '%');
-        parts.push(`a."originalPath" LIKE $${idx++}`);
+    if (config.filterPathPrefixes?.length > 0) {
+        const orClauses = config.filterPathPrefixes.map((prefix) => {
+            params.push(prefix + '%');
+            return `a."originalPath" LIKE $${idx++}`;
+        });
+        parts.push(`(${orClauses.join(' OR ')})`);
     }
 
     return {

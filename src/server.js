@@ -89,22 +89,22 @@ function startServer() {
     // 필터 설정 조회/저장
     app.get('/api/filter', (req, res) => {
         res.json({
-            filterUserIds:    config.filterUserIds,
-            filterPathPrefix: config.filterPathPrefix,
+            filterUserIds:      config.filterUserIds,
+            filterPathPrefixes: config.filterPathPrefixes,
         });
     });
 
     app.post('/api/filter', (req, res) => {
-        const { filterUserIds, filterPathPrefix } = req.body;
+        const { filterUserIds, filterPathPrefixes } = req.body;
         const toSave = {};
 
         if (Array.isArray(filterUserIds)) {
             config.filterUserIds = filterUserIds;
             toSave.filterUserIds = filterUserIds;
         }
-        if (filterPathPrefix !== undefined) {
-            config.filterPathPrefix = filterPathPrefix;
-            toSave.filterPathPrefix = filterPathPrefix;
+        if (Array.isArray(filterPathPrefixes)) {
+            config.filterPathPrefixes = filterPathPrefixes;
+            toSave.filterPathPrefixes = filterPathPrefixes;
         }
 
         config.saveRuntime(toSave);

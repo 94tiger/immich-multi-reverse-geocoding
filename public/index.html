@@ -221,9 +221,15 @@
     <!-- 경로 필터 -->
     <div class="mb-4">
       <label class="block text-sm font-medium text-gray-300 mb-2">경로 필터 (originalPath prefix)</label>
-      <input id="filter-path" type="text" placeholder="/mnt/photos/여행/"
-        class="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-mono border border-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-      <div class="text-gray-600 text-xs mt-1.5">해당 경로로 시작하는 사진만 처리합니다. 비워두면 전체.</div>
+      <div id="path-list" class="space-y-2 mb-2"></div>
+      <div class="flex gap-2">
+        <input id="filter-path-input" type="text" placeholder="/mnt/photos/여행/"
+          class="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-mono border border-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          onkeydown="if(event.key==='Enter')addPathPrefix()">
+        <button onclick="addPathPrefix()"
+          class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-300 transition-colors">추가</button>
+      </div>
+      <div class="text-gray-600 text-xs mt-1.5">해당 경로로 시작하는 사진만 처리합니다. 여러 경로 OR 조건. 비워두면 전체.</div>
     </div>
 
     <div class="flex items-center gap-3">
@@ -285,6 +291,36 @@
 <script>
 // ── 토글 상태 ─────────────────────────────────────────────────
 let buildingNameEnabled = false;
+
+// ── 경로 필터 목록 ────────────────────────────────────────────
+let pathPrefixes = [];
+
+function renderPathList() {
+  const container = document.getElementById('path-list');
+  if (!pathPrefixes.length) {
+    container.innerHTML = '<div class="text-gray-600 text-xs italic">추가된 경로 없음</div>';
+    return;
+  }
+  container.innerHTML = pathPrefixes.map((p, i) => `
+    <div class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5">
+      <span class="flex-1 font-mono text-xs text-gray-300 break-all">${p}</span>
+      <button onclick="removePathPrefix(${i})" class="text-gray-600 hover:text-red-400 transition-colors text-sm leading-none">✕</button>
+    </div>`).join('');
+}
+
+function addPathPrefix() {
+  const input = document.getElementById('filter-path-input');
+  const val = input.value.trim();
+  if (!val || pathPrefixes.includes(val)) { input.value = ''; return; }
+  pathPrefixes.push(val);
+  input.value = '';
+  renderPathList();
+}
+
+function removePathPrefix(idx) {
+  pathPrefixes.splice(idx, 1);
+  renderPathList();
+}
 
 function setToggle(enabled) {
   buildingNameEnabled = enabled;
@@ -592,7 +628,8 @@ async function loadUsers() {
 
     const { users } = usersData;
     selectedUserIds = filter.filterUserIds || [];
-    document.getElementById('filter-path').value = filter.filterPathPrefix || '';
+    pathPrefixes = filter.filterPathPrefixes || [];
+    renderPathList();
 
     if (!users?.length) {
       container.innerHTML = '<span class="text-gray-500 not-italic">사용자 없음</span>';
@@ -629,19 +666,18 @@ function onUserCheck(checkbox) {
 }
 
 async function saveFilter() {
-  const filterPathPrefix = document.getElementById('filter-path').value.trim();
   try {
     const res = await fetch('/api/filter', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filterUserIds: selectedUserIds, filterPathPrefix }),
+      body: JSON.stringify({ filterUserIds: selectedUserIds, filterPathPrefixes: pathPrefixes }),
     });
     const data = await res.json();
     if (data.error) showToast(`오류: ${data.error}`, 'error');
     else {
       const parts = [];
       if (selectedUserIds.length > 0) parts.push(`사용자 ${selectedUserIds.length}명`);
-      if (filterPathPrefix) parts.push(`경로 "${filterPathPrefix}"`);
+      if (pathPrefixes.length > 0) parts.push(`경로 ${pathPrefixes.length}개`);
       showToast(parts.length ? `필터 저장: ${parts.join(', ')}` : '필터 저장 (전체 대상)');
     }
   } catch (e) {
@@ -658,8 +694,12 @@ async function clearFilter() {
     await fetch('/api/filter', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filterUserIds: [], filterPathPrefix: '' }),
+      body: JSON.stringify({ filterUserIds: [], filterPathPrefixes: [] }),
     });
+    selectedUserIds = [];
+    pathPrefixes = [];
+    renderPathList();
+    document.querySelectorAll('#user-list input[type=checkbox]').forEach(cb => cb.checked = false);
     showToast('필터가 초기화되었습니다 (전체 대상)');
   } catch (e) {
     showToast('요청 실패: ' + e.message, 'error');
