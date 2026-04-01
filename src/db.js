@@ -80,7 +80,7 @@ async function bulkUpdate(client, items) {
     });
 
     const result = await client.query(
-        `UPDATE "asset_exif" AS a
+        `UPDATE public."asset_exif" AS a
          SET "country" = v.country, "state" = v.state, "city" = v.city
          FROM (VALUES ${placeholders.join(',')}) AS v(asset_id, country, state, city)
          WHERE a."assetId" = v.asset_id`,
@@ -93,7 +93,7 @@ async function bulkUpdateByIds(client, assetIds, address) {
     if (!assetIds.length || !address) return 0;
     const idPH = assetIds.map((_, i) => `$${i + 4}::uuid`).join(',');
     const result = await client.query(
-        `UPDATE "asset_exif"
+        `UPDATE public."asset_exif"
          SET "country" = $1, "state" = $2, "city" = $3
          WHERE "assetId" IN (${idPH})`,
         [address.country, address.state, address.city, ...assetIds],
