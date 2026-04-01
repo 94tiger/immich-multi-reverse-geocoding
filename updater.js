@@ -158,21 +158,6 @@ function fetchNaverAddress(lat, lon) {
                     const cityParts = [area2, area3, area4].filter((part) => part && part.trim() !== '');
                     let cityName = cityParts.join(' ');
 
-                    let buildingName = '';
-                    const roadResult = parsed.results.find((r) => r.name === 'roadaddr');
-
-                    // 하드코딩 블랙리스트 없이 길이와 숫자 여부만 판별
-                    if (roadResult?.land?.addition0?.value) {
-                        const rawBuildingName = roadResult.land.addition0.value.trim();
-                        if (rawBuildingName.length >= 2 && Number.isNaN(Number(rawBuildingName))) {
-                            buildingName = rawBuildingName;
-                        }
-                    }
-
-                    if (buildingName) {
-                        cityName = `${cityName} (${buildingName})`.trim();
-                    }
-
                     finish({
                         state: stateName,
                         city: cityName,
