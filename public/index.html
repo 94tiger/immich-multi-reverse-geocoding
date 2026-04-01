@@ -184,6 +184,23 @@
         ⚠️ Google API 키가 없습니다. .env 파일에 <code class="font-mono">GOOGLE_API_KEY=...</code>를 추가하세요.
       </div>
 
+      <!-- Google 응답 언어 -->
+      <div class="mb-3">
+        <label class="block text-gray-500 text-xs mb-1.5">Google API 응답 언어</label>
+        <select id="sel-google-language"
+          class="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none">
+          <option value="ko">ko — 한국어 (기본)</option>
+          <option value="en">en — English</option>
+          <option value="ja">ja — 日本語</option>
+          <option value="zh-CN">zh-CN — 简体中文</option>
+          <option value="zh-TW">zh-TW — 繁體中文</option>
+          <option value="fr">fr — Français</option>
+          <option value="de">de — Deutsch</option>
+          <option value="es">es — Español</option>
+        </select>
+        <div class="text-gray-600 text-xs mt-1">Google Maps API가 주소를 반환할 언어. 지원 데이터가 없으면 현지어로 반환될 수 있습니다.</div>
+      </div>
+
       <!-- 건물명 포함 토글 -->
       <div class="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 mb-3">
         <div>
@@ -303,7 +320,7 @@ let buildingNameEnabled = false;
 let providerDirty = false;
 function markProviderDirty() { providerDirty = true; }
 document.addEventListener('DOMContentLoaded', () => {
-  ['sel-korea', 'sel-world'].forEach(id => {
+  ['sel-korea', 'sel-world', 'sel-google-language'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', markProviderDirty);
   });
 });
@@ -458,11 +475,12 @@ async function saveProviders() {
   const geocodingKorea   = document.getElementById('sel-korea').value;
   const geocodingWorld   = document.getElementById('sel-world').value;
   const includeBuildingName = buildingNameEnabled;
+  const googleLanguage   = document.getElementById('sel-google-language').value;
   try {
     const res = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ geocodingKorea, geocodingWorld, includeBuildingName }),
+      body: JSON.stringify({ geocodingKorea, geocodingWorld, includeBuildingName, googleLanguage }),
     });
     const data = await res.json();
     if (data.error) showToast(`오류: ${data.error}`, 'error');
@@ -524,6 +542,9 @@ function updateStatus(data) {
   if (!providerDirty) {
     document.getElementById('sel-korea').value = data.providers?.korea || 'naver';
     document.getElementById('sel-world').value = data.providers?.world || 'disabled';
+    if (data.providers?.googleLanguage) {
+      document.getElementById('sel-google-language').value = data.providers.googleLanguage;
+    }
     if (data.providers?.includeBuildingName !== undefined) {
       setToggle(!!data.providers.includeBuildingName);
     }

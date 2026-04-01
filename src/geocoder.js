@@ -82,7 +82,7 @@ async function fetchNaver(lat, lon) {
 async function fetchGoogle(lat, lon) {
     if (!config.googleApiKey) return null;
 
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&language=ko&key=${config.googleApiKey}`;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&language=${config.googleLanguage}&key=${config.googleApiKey}`;
     const parsed = await httpGet(url, {}, config.googleTimeoutMs);
 
     if (!parsed || parsed.status !== 'OK' || !parsed.results?.length) return null;

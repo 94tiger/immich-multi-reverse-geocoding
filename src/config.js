@@ -41,6 +41,7 @@ const config = {
     // Google Maps API
     googleApiKey: env('GOOGLE_API_KEY'),
     googleTimeoutMs: parseInt(env('GOOGLE_API_TIMEOUT_MS', '10000'), 10),
+    googleLanguage: runtimeOverride.googleLanguage || env('GOOGLE_LANGUAGE', 'ko'),
 
     // Immich PostgreSQL
     db: {

@@ -35,6 +35,7 @@ function startServer() {
                 korea: config.geocodingKorea,
                 world: config.geocodingWorld,
                 includeBuildingName: config.includeBuildingName,
+                googleLanguage: config.googleLanguage,
                 hasNaverKey: !!config.naverId,
                 hasGoogleKey: !!config.googleApiKey,
             },
@@ -63,6 +64,7 @@ function startServer() {
             geocodingKorea: config.geocodingKorea,
             geocodingWorld: config.geocodingWorld,
             includeBuildingName: config.includeBuildingName,
+            googleLanguage: config.googleLanguage,
             hasNaverKey: !!config.naverId,
             hasGoogleKey: !!config.googleApiKey,
         });
@@ -173,7 +175,7 @@ function startServer() {
 
     // 설정 변경 (cron, 제공자, 건물명)
     app.post('/api/config', (req, res) => {
-        const { cronSchedule, geocodingKorea, geocodingWorld, includeBuildingName } = req.body;
+        const { cronSchedule, geocodingKorea, geocodingWorld, includeBuildingName, googleLanguage } = req.body;
         const { reschedule } = require('./scheduler');
 
         try {
@@ -205,6 +207,15 @@ function startServer() {
             if (includeBuildingName !== undefined) {
                 config.includeBuildingName = !!includeBuildingName;
                 toSave.includeBuildingName = !!includeBuildingName;
+            }
+
+            if (googleLanguage !== undefined) {
+                const validLangs = ['ko', 'en', 'ja', 'zh-CN', 'zh-TW', 'fr', 'de', 'es'];
+                if (!validLangs.includes(googleLanguage)) {
+                    return res.status(400).json({ error: '유효하지 않은 언어 코드' });
+                }
+                config.googleLanguage = googleLanguage;
+                toSave.googleLanguage = googleLanguage;
             }
 
             if (Object.keys(toSave).length > 0) {
