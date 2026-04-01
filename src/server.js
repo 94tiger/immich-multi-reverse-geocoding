@@ -25,7 +25,7 @@ function startServer() {
     app.get('/api/status', (req, res) => {
         res.json({
             isRunning: state.isRunning,
-            currentRunForce: state.currentRunForce,
+            currentRunMode: state.currentRunMode,
             currentRunTarget: state.currentRunTarget,
             currentRunStart: state.currentRunStart,
             lastRun: state.lastRun,
@@ -44,9 +44,9 @@ function startServer() {
     // 수동 실행 트리거
     app.post('/api/run', async (req, res) => {
         const { triggerRun } = require('./scheduler');
-        const force = req.body.force === true;
+        const mode = ['new', 'untranslated', 'all'].includes(req.body.mode) ? req.body.mode : 'new';
         const target = ['all', 'korea', 'world'].includes(req.body.target) ? req.body.target : 'all';
-        const result = await triggerRun(force, target);
+        const result = await triggerRun(mode, target);
         res.json(result);
     });
 

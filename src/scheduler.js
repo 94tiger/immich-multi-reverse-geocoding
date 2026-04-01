@@ -11,22 +11,23 @@ function log(msg) {
     state.addLog(msg);
 }
 
-async function triggerRun(force = false, target = 'all') {
+async function triggerRun(mode = 'new', target = 'all') {
     if (state.isRunning) {
         return { started: false, reason: '이미 실행 중입니다' };
     }
 
     const { runWorker } = require('./worker');
     state.isRunning = true;
-    state.currentRunForce = force;
+    state.currentRunMode = mode;
     state.currentRunTarget = target;
     state.currentRunStart = Date.now();
 
+    const modeLabel = { new: '미입력만', untranslated: '미번역 포함', all: '전체 재처리' }[mode] || mode;
     const targetLabel = { all: '전체', korea: '한국', world: '세계' }[target] || target;
-    log(force ? `🚀 강제 재처리 시작 (${targetLabel})` : `🚀 실행 시작 (${targetLabel})`);
+    log(`🚀 실행 시작 (${targetLabel} / ${modeLabel})`);
 
     try {
-        const stats = await runWorker(force, log, target);
+        const stats = await runWorker(mode, log, target);
         state.lastStats = stats;
         state.lastRun = Date.now();
         return { started: true };
@@ -35,7 +36,7 @@ async function triggerRun(force = false, target = 'all') {
         return { started: true, error: err.message };
     } finally {
         state.isRunning = false;
-        state.currentRunForce = false;
+        state.currentRunMode = 'new';
         state.currentRunTarget = 'all';
         state.currentRunStart = null;
     }
@@ -49,7 +50,7 @@ function reschedule(cronExpression) {
         task.stop();
     }
     task = cron.schedule(cronExpression, () => {
-        triggerRun(false).catch((err) => log(`❌ 스케줄 실행 오류: ${err.message}`));
+        triggerRun('new', 'all').catch((err) => log(`❌ 스케줄 실행 오류: ${err.message}`));
     });
     state.cronSchedule = cronExpression;
     config.saveRuntime({ cronSchedule: cronExpression });
@@ -60,7 +61,7 @@ function startScheduler() {
 
     if (cron.validate(config.cronSchedule)) {
         task = cron.schedule(config.cronSchedule, () => {
-            triggerRun(false).catch((err) => log(`❌ 스케줄 실행 오류: ${err.message}`));
+            triggerRun('new', 'all').catch((err) => log(`❌ 스케줄 실행 오류: ${err.message}`));
         });
         log(`📅 스케줄 등록: ${config.cronSchedule}`);
     } else {
@@ -69,7 +70,7 @@ function startScheduler() {
 
     if (config.runOnStartup) {
         setTimeout(() => {
-            triggerRun(false).catch((err) => log(`❌ 초기 실행 오류: ${err.message}`));
+            triggerRun('new', 'all').catch((err) => log(`❌ 초기 실행 오류: ${err.message}`));
         }, 1500);
     }
 }

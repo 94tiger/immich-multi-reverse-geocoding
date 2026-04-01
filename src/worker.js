@@ -77,12 +77,12 @@ function buildFilterClause(startIdx) {
 }
 
 /**
- * @param {boolean} forceUpdate - 강제 재처리 여부
+ * @param {'new'|'untranslated'|'all'} mode - 처리 모드
  * @param {(msg: string) => void} log - 로그 출력 함수
  * @param {'all'|'korea'|'world'} target - 처리 범위
  * @returns {Promise<object>} 실행 통계
  */
-async function runWorker(forceUpdate, log, target = 'all') {
+async function runWorker(mode = 'new', log, target = 'all') {
     const stats = {
         warmedCount: 0,
         koreanTotal: 0,
@@ -122,9 +122,12 @@ async function runWorker(forceUpdate, log, target = 'all') {
                   AND ae.country IN ('South Korea', '대한민국', 'Korea')
                   ${needsJoin ? 'AND a."deletedAt" IS NULL' : ''}
             `;
-            if (!forceUpdate) {
+            if (mode === 'new') {
+                korQuery += ` AND (ae.city IS NULL OR ae.state IS NULL)`;
+            } else if (mode === 'untranslated') {
                 korQuery += ` AND (ae.city IS NULL OR ae.city !~ '[가-힣]')`;
             }
+            // mode === 'all': 조건 없음
             korQuery += ` ${filterClause}`;
 
             const korRes = await client.query(korQuery, filterParams);
@@ -275,9 +278,12 @@ async function runWorker(forceUpdate, log, target = 'all') {
                   AND NOT (ae.latitude BETWEEN 33 AND 43 AND ae.longitude BETWEEN 124 AND 132)
                   ${wNeedsJoin ? 'AND a."deletedAt" IS NULL' : ''}
             `;
-            if (!forceUpdate) {
+            if (mode === 'new') {
+                worldQuery += ` AND (ae.city IS NULL OR ae.state IS NULL)`;
+            } else if (mode === 'untranslated') {
                 worldQuery += ` AND (ae.city IS NULL OR ae.city !~ '[가-힣]')`;
             }
+            // mode === 'all': 조건 없음
             worldQuery += ` ${wFilterClause}`;
 
             const worldRes = await client.query(worldQuery, wFilterParams);

@@ -102,7 +102,11 @@ async function fetchGoogle(lat, lon) {
         getComp('administrative_area_level_2', 'locality'),
         getComp('sublocality_level_1'),
         getComp('sublocality_level_2'),
-    ].filter(Boolean);
+        getComp('sublocality_level_3'),
+        getComp('sublocality_level_4'),
+    ].filter(Boolean)
+     .filter((v, i, arr) => arr.indexOf(v) === i) // 중복 제거
+     .filter(v => v !== state);                   // state와 중복 제거 (중국 직할시 등)
 
     return { country: country || null, state: state || null, city: cityParts.join(' ') || null };
 }

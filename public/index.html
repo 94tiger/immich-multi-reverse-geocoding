@@ -57,15 +57,16 @@
       <option value="korea">한국만</option>
       <option value="world">세계만</option>
     </select>
+    <select id="sel-mode"
+      class="bg-gray-800 text-white px-3 py-2.5 rounded-lg text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none">
+      <option value="new">미입력만</option>
+      <option value="untranslated">미번역 포함</option>
+      <option value="all">전체 재처리</option>
+    </select>
     <button id="btn-run"
-      onclick="triggerRun(false)"
+      onclick="triggerRun()"
       class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-semibold transition-colors">
-      ▶&nbsp; 지금 실행
-    </button>
-    <button id="btn-force"
-      onclick="triggerRun(true)"
-      class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-semibold transition-colors">
-      ⚡&nbsp; 강제 재처리
+      ▶&nbsp; 실행
     </button>
     <div id="run-indicator" class="hidden items-center gap-2 text-green-400 text-sm">
       <span class="inline-block w-2 h-2 bg-green-400 rounded-full pulse"></span>
@@ -414,19 +415,21 @@ async function fetchLogs() {
   } catch {}
 }
 
-async function triggerRun(force) {
+async function triggerRun() {
   const target = document.getElementById('sel-target').value;
+  const mode = document.getElementById('sel-mode').value;
   const targetLabel = { all: '전체', korea: '한국', world: '세계' }[target];
+  const modeLabel = { new: '미입력만', untranslated: '미번역 포함', all: '전체 재처리' }[mode];
   try {
     const res = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force, target }),
+      body: JSON.stringify({ mode, target }),
     });
     const data = await res.json();
-    if (data.error)   showToast(`오류: ${data.error}`, 'error');
+    if (data.error) showToast(`오류: ${data.error}`, 'error');
     else if (!data.started) showToast(data.reason || '실행 요청 실패', 'error');
-    else showToast(force ? `강제 재처리 시작됨 (${targetLabel})` : `실행 시작됨 (${targetLabel})`);
+    else showToast(`실행 시작됨 (${targetLabel} / ${modeLabel})`);
     fetchStatus();
   } catch (e) {
     showToast('요청 실패: ' + e.message, 'error');
@@ -478,12 +481,13 @@ function updateStatus(data) {
   const runLabel = document.getElementById('run-label');
 
   if (data.isRunning) {
+    const modeLabel = { new: '미입력만', untranslated: '미번역 포함', all: '전체 재처리' }[data.currentRunMode] || '';
     const tLabel = { all: '전체', korea: '한국', world: '세계' }[data.currentRunTarget] || '';
     badge.className = 'px-4 py-1.5 rounded-full text-sm font-semibold bg-green-700 text-green-100 pulse';
-    badge.textContent = data.currentRunForce ? `⚡ 강제 실행 중 (${tLabel})` : `▶ 실행 중 (${tLabel})`;
+    badge.textContent = `▶ 실행 중 (${tLabel} / ${modeLabel})`;
     indicator.classList.remove('hidden');
     indicator.classList.add('flex');
-    runLabel.textContent = data.currentRunForce ? `강제 재처리 중... (${tLabel})` : `실행 중... (${tLabel})`;
+    runLabel.textContent = `실행 중... (${tLabel} / ${modeLabel})`;
   } else {
     badge.className = 'px-4 py-1.5 rounded-full text-sm font-semibold bg-gray-800 text-gray-400';
     badge.textContent = '대기 중';
@@ -491,8 +495,7 @@ function updateStatus(data) {
     indicator.classList.remove('flex');
   }
 
-  document.getElementById('btn-run').disabled   = data.isRunning;
-  document.getElementById('btn-force').disabled = data.isRunning;
+  document.getElementById('btn-run').disabled = data.isRunning;
 
   // 마지막 실행
   document.getElementById('last-run').textContent = data.lastRun ? fmt(data.lastRun) : '-';
