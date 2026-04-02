@@ -38,6 +38,7 @@ function startServer() {
                 googleLanguage: config.googleLanguage,
                 hasNaverKey: !!config.naverId,
                 hasGoogleKey: !!config.googleApiKey,
+                hasHereKey: !!config.hereApiKey,
             },
         });
     });
@@ -122,13 +123,14 @@ function startServer() {
     let healthCache = null;
 
     async function runHealthCheck() {
-        const { fetchNaver, fetchGoogle } = require('./geocoder');
+        const { fetchNaver, fetchGoogle, fetchHere } = require('./geocoder');
         const { createClient } = require('./db');
 
         const result = {
             db:     { ok: false, detail: '' },
             naver:  { ok: null,  detail: '키 미설정' },
             google: { ok: null,  detail: '키 미설정' },
+            here:   { ok: null,  detail: '키 미설정' },
             checkedAt: Date.now(),
         };
 
@@ -165,6 +167,17 @@ function startServer() {
             }
         }
 
+        if (config.hereApiKey) {
+            try {
+                const addr = await fetchHere(TEST_LAT, TEST_LON);
+                result.here = addr?.state
+                    ? { ok: true,  detail: addr.state }
+                    : { ok: false, detail: '응답 없음 (키 오류)' };
+            } catch (e) {
+                result.here = { ok: false, detail: e.message };
+            }
+        }
+
         healthCache = result;
     }
 
@@ -187,7 +200,7 @@ function startServer() {
             }
 
             if (geocodingKorea !== undefined) {
-                const valid = ['naver', 'google', 'disabled'];
+                const valid = ['naver', 'google', 'here', 'disabled'];
                 if (!valid.includes(geocodingKorea)) {
                     return res.status(400).json({ error: '유효하지 않은 한국 제공자 값' });
                 }
@@ -196,7 +209,7 @@ function startServer() {
             }
 
             if (geocodingWorld !== undefined) {
-                const valid = ['google', 'disabled'];
+                const valid = ['google', 'here', 'disabled'];
                 if (!valid.includes(geocodingWorld)) {
                     return res.status(400).json({ error: '유효하지 않은 세계 제공자 값' });
                 }

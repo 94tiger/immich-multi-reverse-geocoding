@@ -123,15 +123,46 @@ async function fetchGoogle(lat, lon) {
     };
 }
 
+async function fetchHere(lat, lon) {
+    if (!config.hereApiKey) return null;
+
+    const url = `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lon}&lang=ko&apiKey=${config.hereApiKey}`;
+    const parsed = await httpGet(url, {}, config.hereTimeoutMs);
+
+    if (!parsed || !parsed.items?.length) return null;
+
+    const item = parsed.items[0];
+    const addr = item.address;
+
+    const country = addr.countryName || null;
+    const countryCode = addr.countryCode || null; // ISO 3166-1 alpha-3
+    const state = addr.state || addr.county || null;
+    const cityParts = [
+        addr.city,
+        addr.district,
+    ].filter(Boolean)
+     .filter((v, i, arr) => arr.indexOf(v) === i)
+     .filter(v => v !== state);
+
+    return {
+        country,
+        countryCode,
+        state,
+        city: cityParts.join(' ') || null,
+    };
+}
+
 async function fetchAddress(lat, lon) {
     if (isKorean(lat, lon)) {
-        if (config.geocodingKorea === 'google') return fetchGoogle(lat, lon);
         if (config.geocodingKorea === 'naver') return fetchNaver(lat, lon);
+        if (config.geocodingKorea === 'google') return fetchGoogle(lat, lon);
+        if (config.geocodingKorea === 'here') return fetchHere(lat, lon);
         return null;
     } else {
         if (config.geocodingWorld === 'google') return fetchGoogle(lat, lon);
+        if (config.geocodingWorld === 'here') return fetchHere(lat, lon);
         return null;
     }
 }
 
-module.exports = { fetchAddress, fetchNaver, fetchGoogle, isKorean };
+module.exports = { fetchAddress, fetchNaver, fetchGoogle, fetchHere, isKorean };
