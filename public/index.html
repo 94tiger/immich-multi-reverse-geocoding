@@ -82,9 +82,46 @@
     </div>
     <div class="flex flex-wrap gap-3">
       <div id="health-db"     class="health-badge">DB <span class="health-dot">…</span></div>
-      <div id="health-naver"  class="health-badge">Naver <span class="health-dot">…</span></div>
-      <div id="health-google" class="health-badge">Google <span class="health-dot">…</span></div>
-      <div id="health-here"   class="health-badge">HERE <span class="health-dot">…</span></div>
+      <div id="health-naver"  class="health-badge cursor-pointer select-none" onclick="openGeoTest('naver')"  title="클릭하여 테스트">Naver <span class="health-dot">…</span></div>
+      <div id="health-google" class="health-badge cursor-pointer select-none" onclick="openGeoTest('google')" title="클릭하여 테스트">Google <span class="health-dot">…</span></div>
+      <div id="health-here"   class="health-badge cursor-pointer select-none" onclick="openGeoTest('here')"   title="클릭하여 테스트">HERE <span class="health-dot">…</span></div>
+    </div>
+
+    <!-- API 테스트 패널 -->
+    <div id="geo-test-panel" class="hidden mt-4 p-4 bg-gray-800 rounded-xl border border-gray-700">
+      <div class="flex items-center justify-between mb-3">
+        <span id="geo-test-title" class="text-sm font-semibold text-white">API 테스트</span>
+        <button onclick="closeGeoTest()" class="text-gray-500 hover:text-gray-300 text-lg leading-none">✕</button>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <input id="geo-test-lat" type="number" step="any" placeholder="위도 (예: 37.5665)"
+          onkeydown="if(event.key==='Enter')runGeoTest()"
+          class="flex-1 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm font-mono border border-gray-700 focus:border-indigo-500 focus:outline-none">
+        <input id="geo-test-lon" type="number" step="any" placeholder="경도 (예: 126.9780)"
+          onkeydown="if(event.key==='Enter')runGeoTest()"
+          class="flex-1 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm font-mono border border-gray-700 focus:border-indigo-500 focus:outline-none">
+        <button onclick="runGeoTest()"
+          class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-semibold transition-colors">
+          테스트
+        </button>
+      </div>
+      <div id="geo-test-result" class="hidden">
+        <div class="grid grid-cols-3 gap-2 text-sm">
+          <div class="bg-gray-900 rounded-lg p-2">
+            <div class="text-gray-500 text-xs mb-1">country</div>
+            <div id="geo-result-country" class="text-white font-mono text-xs break-all">-</div>
+          </div>
+          <div class="bg-gray-900 rounded-lg p-2">
+            <div class="text-gray-500 text-xs mb-1">state</div>
+            <div id="geo-result-state" class="text-white font-mono text-xs break-all">-</div>
+          </div>
+          <div class="bg-gray-900 rounded-lg p-2">
+            <div class="text-gray-500 text-xs mb-1">city</div>
+            <div id="geo-result-city" class="text-white font-mono text-xs break-all">-</div>
+          </div>
+        </div>
+        <div id="geo-test-error" class="hidden mt-2 text-red-400 text-xs"></div>
+      </div>
     </div>
   </div>
 
@@ -777,6 +814,62 @@ function updateHealth(data) {
   setHealthBadge('health-naver',  data.naver);
   setHealthBadge('health-google', data.google);
   setHealthBadge('health-here',   data.here);
+}
+
+// ── API 테스트 패널 ───────────────────────────────────────────
+let geoTestProvider = null;
+
+function openGeoTest(provider) {
+  if (geoTestProvider === provider) { closeGeoTest(); return; }
+  geoTestProvider = provider;
+  const labels = { naver: 'Naver', google: 'Google', here: 'HERE' };
+  document.getElementById('geo-test-title').textContent = `${labels[provider]} API 테스트`;
+  document.getElementById('geo-test-result').classList.add('hidden');
+  document.getElementById('geo-test-panel').classList.remove('hidden');
+}
+
+function closeGeoTest() {
+  geoTestProvider = null;
+  document.getElementById('geo-test-panel').classList.add('hidden');
+}
+
+async function runGeoTest() {
+  const lat = document.getElementById('geo-test-lat').value.trim();
+  const lon = document.getElementById('geo-test-lon').value.trim();
+  if (!lat || !lon) { showToast('위도와 경도를 입력하세요', 'error'); return; }
+
+  const resultEl = document.getElementById('geo-test-result');
+  const errorEl  = document.getElementById('geo-test-error');
+  resultEl.classList.remove('hidden');
+  errorEl.classList.add('hidden');
+  document.getElementById('geo-result-country').textContent = '조회 중...';
+  document.getElementById('geo-result-state').textContent   = '조회 중...';
+  document.getElementById('geo-result-city').textContent    = '조회 중...';
+
+  try {
+    const res = await fetch(`/api/test-geocode?lat=${lat}&lon=${lon}&provider=${geoTestProvider}`);
+    const data = await res.json();
+    if (data.error) {
+      errorEl.textContent = data.error;
+      errorEl.classList.remove('hidden');
+      document.getElementById('geo-result-country').textContent = '-';
+      document.getElementById('geo-result-state').textContent   = '-';
+      document.getElementById('geo-result-city').textContent    = '-';
+    } else if (!data.result) {
+      errorEl.textContent = '결과 없음 (API 키 오류 또는 해당 좌표 데이터 없음)';
+      errorEl.classList.remove('hidden');
+      document.getElementById('geo-result-country').textContent = '-';
+      document.getElementById('geo-result-state').textContent   = '-';
+      document.getElementById('geo-result-city').textContent    = '-';
+    } else {
+      document.getElementById('geo-result-country').textContent = data.result.country || '-';
+      document.getElementById('geo-result-state').textContent   = data.result.state   || '-';
+      document.getElementById('geo-result-city').textContent    = data.result.city    || '-';
+    }
+  } catch (e) {
+    errorEl.textContent = '요청 실패: ' + e.message;
+    errorEl.classList.remove('hidden');
+  }
 }
 
 function setHealthBadge(id, item) {

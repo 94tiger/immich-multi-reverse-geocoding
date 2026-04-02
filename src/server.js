@@ -186,6 +186,30 @@ function startServer() {
         res.json(healthCache);
     });
 
+    // API 테스트 (위도/경도 입력 → 주소 반환)
+    app.get('/api/test-geocode', async (req, res) => {
+        const { fetchNaver, fetchGoogle, fetchHere } = require('./geocoder');
+        const lat = parseFloat(req.query.lat);
+        const lon = parseFloat(req.query.lon);
+        const provider = req.query.provider;
+
+        if (isNaN(lat) || isNaN(lon)) {
+            return res.status(400).json({ error: '유효하지 않은 좌표' });
+        }
+
+        try {
+            let result = null;
+            if (provider === 'naver') result = await fetchNaver(lat, lon);
+            else if (provider === 'google') result = await fetchGoogle(lat, lon);
+            else if (provider === 'here') result = await fetchHere(lat, lon);
+            else return res.status(400).json({ error: '유효하지 않은 제공자' });
+
+            res.json({ result });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     // 설정 변경 (cron, 제공자, 건물명)
     app.post('/api/config', (req, res) => {
         const { cronSchedule, geocodingKorea, geocodingWorld, includeBuildingName, googleLanguage } = req.body;
