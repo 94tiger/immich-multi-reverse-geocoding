@@ -105,6 +105,15 @@ async function runWorker(mode = 'new', log, target = 'all') {
         await client.connect();
         await ensureCacheTable(client);
 
+        const modeLabel = { new: '미입력만', untranslated: '미번역 포함', all: '전체 재처리' }[mode] || mode;
+        const targetLabel = { all: '전체', korea: '한국', world: '세계' }[target] || target;
+        const providerParts = [];
+        if (target !== 'world') providerParts.push(`한국: ${config.geocodingKorea}`);
+        if (target !== 'korea') providerParts.push(`세계: ${config.geocodingWorld}`);
+        log(`▶ 작업 시작 — 범위: ${targetLabel} / 모드: ${modeLabel} / ${providerParts.join(' | ')} / 병렬: ${config.parallelLimit}`);
+        if (config.filterUserIds?.length) log(`  사용자 필터: ${config.filterUserIds.length}명`);
+        if (config.filterPathPrefixes?.length) log(`  경로 필터: ${config.filterPathPrefixes.length}개`);
+
         stats.warmedCount = await warmUpCache(client, addressCache, config.cacheTtlDays);
         log(`🔥 캐시 워밍업 완료: ${stats.warmedCount}건 적재`);
 
