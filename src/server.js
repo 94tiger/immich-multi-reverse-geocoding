@@ -39,6 +39,7 @@ function startServer() {
                 hasNaverKey: !!config.naverId,
                 hasGoogleKey: !!config.googleApiKey,
                 hasHereKey: !!config.hereApiKey,
+                hasPhotonUrl: !!config.photonUrl,
             },
         });
     });
@@ -123,7 +124,7 @@ function startServer() {
     let healthCache = null;
 
     async function runHealthCheck() {
-        const { fetchNaver, fetchGoogle, fetchHere } = require('./geocoder');
+        const { fetchNaver, fetchGoogle, fetchHere, fetchPhoton } = require('./geocoder');
         const { createClient } = require('./db');
 
         const result = {
@@ -131,6 +132,7 @@ function startServer() {
             naver:  { ok: null,  detail: '키 미설정' },
             google: { ok: null,  detail: '키 미설정' },
             here:   { ok: null,  detail: '키 미설정' },
+            photon: { ok: null,  detail: 'URL 미설정' },
             checkedAt: Date.now(),
         };
 
@@ -178,6 +180,18 @@ function startServer() {
             }
         }
 
+        if (config.photonUrl) {
+            try {
+                const addr = await fetchPhoton(TEST_LAT, TEST_LON);
+                const detail = addr?.state || addr?.city;
+                result.photon = detail
+                    ? { ok: true,  detail }
+                    : { ok: false, detail: '응답 없음' };
+            } catch (e) {
+                result.photon = { ok: false, detail: e.message };
+            }
+        }
+
         healthCache = result;
     }
 
@@ -188,7 +202,7 @@ function startServer() {
 
     // API 테스트 (위도/경도 입력 → 주소 반환)
     app.get('/api/test-geocode', async (req, res) => {
-        const { fetchNaver, fetchGoogle, fetchHere } = require('./geocoder');
+        const { fetchNaver, fetchGoogle, fetchHere, fetchPhoton } = require('./geocoder');
         const lat = parseFloat(req.query.lat);
         const lon = parseFloat(req.query.lon);
         const provider = req.query.provider;
@@ -202,6 +216,7 @@ function startServer() {
             if (provider === 'naver') result = await fetchNaver(lat, lon);
             else if (provider === 'google') result = await fetchGoogle(lat, lon);
             else if (provider === 'here') result = await fetchHere(lat, lon);
+            else if (provider === 'photon') result = await fetchPhoton(lat, lon);
             else return res.status(400).json({ error: '유효하지 않은 제공자' });
 
             res.json({ result });
@@ -224,7 +239,7 @@ function startServer() {
             }
 
             if (geocodingKorea !== undefined) {
-                const valid = ['naver', 'google', 'here', 'disabled'];
+                const valid = ['naver', 'google', 'here', 'photon', 'disabled'];
                 if (!valid.includes(geocodingKorea)) {
                     return res.status(400).json({ error: '유효하지 않은 한국 제공자 값' });
                 }
@@ -233,7 +248,7 @@ function startServer() {
             }
 
             if (geocodingWorld !== undefined) {
-                const valid = ['google', 'here', 'disabled'];
+                const valid = ['google', 'here', 'photon', 'disabled'];
                 if (!valid.includes(geocodingWorld)) {
                     return res.status(400).json({ error: '유효하지 않은 세계 제공자 값' });
                 }
