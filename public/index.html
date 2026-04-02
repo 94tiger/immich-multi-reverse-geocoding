@@ -324,6 +324,28 @@
     </div>
   </div>
 
+  <!-- 캐시 관리 -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">캐시 관리</h2>
+      <span class="text-gray-600 text-xs">제공자 변경 후 재처리 시 사용</span>
+    </div>
+    <div class="flex flex-wrap gap-3">
+      <button onclick="clearCache('korea')"
+        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors text-gray-300">
+        한국 캐시 초기화
+      </button>
+      <button onclick="clearCache('world')"
+        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors text-gray-300">
+        세계 캐시 초기화
+      </button>
+      <button onclick="clearCache('all')"
+        class="px-4 py-2 bg-red-900/50 hover:bg-red-800/60 rounded-lg text-sm font-medium transition-colors text-red-400">
+        전체 캐시 초기화
+      </button>
+    </div>
+  </div>
+
   <!-- 로그 -->
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
     <div class="flex items-center justify-between mb-3">
@@ -704,6 +726,23 @@ function appendLogs(logs) {
 
   if (isAtBottom) {
     container.scrollTop = container.scrollHeight;
+  }
+}
+
+async function clearCache(target) {
+  const labels = { korea: '한국', world: '세계', all: '전체' };
+  if (!confirm(`${labels[target]} 캐시를 초기화하시겠습니까?\n다음 실행 시 해당 지역 좌표를 API로 재조회합니다.`)) return;
+  try {
+    const res = await fetch('/api/cache/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target }),
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); return; }
+    showToast(`${labels[target]} 캐시 ${data.deleted}건 삭제됨`);
+  } catch (e) {
+    showToast('요청 실패: ' + e.message, 'error');
   }
 }
 

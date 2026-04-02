@@ -93,6 +93,40 @@ function startServer() {
         }
     });
 
+    // 캐시 삭제 (target: korea | world | all)
+    app.post('/api/cache/clear', async (req, res) => {
+        const { createClient } = require('./db');
+        const target = req.body.target;
+        if (!['korea', 'world', 'all'].includes(target)) {
+            return res.status(400).json({ error: '유효하지 않은 target' });
+        }
+
+        const client = createClient();
+        try {
+            await client.connect();
+            let sql;
+            if (target === 'korea') {
+                // 한국 좌표 범위: 위도 33-43, 경도 124-132
+                sql = `DELETE FROM geocoding.geocode_cache
+                       WHERE CAST(split_part(cache_key, '_', 1) AS NUMERIC) BETWEEN 33 AND 43
+                         AND CAST(split_part(cache_key, '_', 2) AS NUMERIC) BETWEEN 124 AND 132`;
+            } else if (target === 'world') {
+                sql = `DELETE FROM geocoding.geocode_cache
+                       WHERE NOT (CAST(split_part(cache_key, '_', 1) AS NUMERIC) BETWEEN 33 AND 43
+                              AND CAST(split_part(cache_key, '_', 2) AS NUMERIC) BETWEEN 124 AND 132)`;
+            } else {
+                sql = `DELETE FROM geocoding.geocode_cache`;
+            }
+            const result = await client.query(sql);
+            res.json({ deleted: result.rowCount });
+        } catch (e) {
+            console.error('[캐시 삭제 오류]', e.message);
+            res.status(500).json({ error: e.message });
+        } finally {
+            try { await client.end(); } catch {}
+        }
+    });
+
     // 필터 설정 조회/저장
     app.get('/api/filter', (req, res) => {
         res.json({
