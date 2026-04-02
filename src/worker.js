@@ -195,49 +195,64 @@ async function runWorker(mode = 'new', log, target = 'all') {
 
                 let groupsDone = 0;
                 let photosDone = 0;
+                const PARALLEL = Math.max(1, config.parallelLimit);
+                const groupEntries = [...groups.entries()];
 
-                for (const [key, rows] of groups.entries()) {
-                    groupsDone++;
-                    photosDone += rows.length;
-                    const first = rows[0];
-                    let address = null;
+                for (let batchStart = 0; batchStart < groupEntries.length; batchStart += PARALLEL) {
+                    const batch = groupEntries.slice(batchStart, batchStart + PARALLEL);
 
-                    if (groupsDone <= 3) {
-                        log(
-                            `🔎 샘플 ${groupsDone}/${groups.size}: lat=${first.latitude} lon=${first.longitude} (${rows.length}장)`,
-                        );
-                    }
-
-                    try {
-                        if (addressCache.has(key)) {
-                            address = { ...addressCache.get(key), source: 'memory' };
-                            stats.memoryHitCount += rows.length;
-                        } else {
-                            const apiResult = await fetchAddress(first.latitude, first.longitude);
-                            if (apiResult) {
-                                address = { ...apiResult, source: 'api' };
-                                stats.apiCallCount++;
-                                setMemoryCache(key, apiResult);
-                                await upsertCache(client, key, apiResult).catch(() => {});
+                    // 병렬 API 호출
+                    const fetchResults = await Promise.all(batch.map(async ([key, rows]) => {
+                        const first = rows[0];
+                        let address = null;
+                        try {
+                            if (addressCache.has(key)) {
+                                address = { ...addressCache.get(key), source: 'memory' };
+                            } else {
+                                const apiResult = await fetchAddress(first.latitude, first.longitude);
+                                if (apiResult) {
+                                    address = { ...apiResult, source: 'api' };
+                                    setMemoryCache(key, apiResult);
+                                }
                             }
-                        }
-
-                        // Fallback: mapping.json 번역 (한국 자산 전용)
-                        if (!address && isKorean(first.latitude, first.longitude)) {
-                            const korState = translateLocation(first.state);
-                            const korCity = translateLocation(first.city);
-                            if (korState || korCity) {
-                                address = {
-                                    country: '대한민국',
-                                    state: korState || first.state,
-                                    city: korCity || first.city,
-                                    source: 'fallback',
-                                };
-                                stats.fallbackHitCount += rows.length;
+                            // Fallback: mapping.json 번역 (한국 자산 전용)
+                            if (!address && isKorean(first.latitude, first.longitude)) {
+                                const korState = translateLocation(first.state);
+                                const korCity = translateLocation(first.city);
+                                if (korState || korCity) {
+                                    address = {
+                                        country: '대한민국',
+                                        state: korState || first.state,
+                                        city: korCity || first.city,
+                                        source: 'fallback',
+                                    };
+                                }
                             }
+                        } catch {}
+                        return { key, rows, first, address };
+                    }));
+
+                    // 순차 DB 처리
+                    let batchHadApiCall = false;
+                    for (const { key, rows, first, address } of fetchResults) {
+                        groupsDone++;
+                        photosDone += rows.length;
+
+                        if (groupsDone <= 3) {
+                            log(
+                                `🔎 샘플 ${groupsDone}/${groups.size}: lat=${first.latitude} lon=${first.longitude} (${rows.length}장)`,
+                            );
                         }
 
                         if (address) {
+                            if (address.source === 'memory') stats.memoryHitCount += rows.length;
+                            if (address.source === 'fallback') stats.fallbackHitCount += rows.length;
+                            if (address.source === 'api') {
+                                stats.apiCallCount++;
+                                batchHadApiCall = true;
+                                await upsertCache(client, key, address).catch(() => {});
+                            }
+
                             const updated = await bulkUpdateByIds(
                                 client,
                                 rows.map((r) => r.assetId),
@@ -246,9 +261,9 @@ async function runWorker(mode = 'new', log, target = 'all') {
                             stats.apiTrackUpdated += updated;
                             stats.totalUpdated += updated;
                         }
-                    } catch {
-                        // 개별 그룹 에러 무시
                     }
+
+                    if (batchHadApiCall) await sleep(config.delay);
 
                     if (groupsDone % API_TRACK_LOG_INTERVAL === 0 || groupsDone === groups.size) {
                         log(
@@ -256,8 +271,6 @@ async function runWorker(mode = 'new', log, target = 'all') {
                                 `(API: ${stats.apiCallCount} | 메모리 재사용: ${stats.memoryHitCount} | Fallback: ${stats.fallbackHitCount} | 반영: ${stats.apiTrackUpdated})`,
                         );
                     }
-
-                    if (address?.source === 'api') await sleep(config.delay);
                 }
                 log(`✅ Phase 2 완료: ${stats.apiTrackUpdated}건`);
             }
@@ -299,24 +312,41 @@ async function runWorker(mode = 'new', log, target = 'all') {
                 }
 
                 let wDone = 0;
-                for (const [key, rows] of worldGroups.entries()) {
-                    wDone++;
-                    const first = rows[0];
-                    let address = null;
+                const wPARALLEL = Math.max(1, config.parallelLimit);
+                const wEntries = [...worldGroups.entries()];
 
-                    try {
-                        if (addressCache.has(key)) {
-                            address = addressCache.get(key);
-                        } else {
-                            address = await fetchAddress(first.latitude, first.longitude);
-                            if (address) {
-                                setMemoryCache(key, address);
-                                await upsertCache(client, key, address).catch(() => {});
-                                stats.apiCallCount++;
+                for (let batchStart = 0; batchStart < wEntries.length; batchStart += wPARALLEL) {
+                    const batch = wEntries.slice(batchStart, batchStart + wPARALLEL);
+
+                    // 병렬 API 호출
+                    const fetchResults = await Promise.all(batch.map(async ([key, rows]) => {
+                        const first = rows[0];
+                        let address = null;
+                        let fromApi = false;
+                        try {
+                            if (addressCache.has(key)) {
+                                address = addressCache.get(key);
+                            } else {
+                                address = await fetchAddress(first.latitude, first.longitude);
+                                if (address) {
+                                    fromApi = true;
+                                    setMemoryCache(key, address);
+                                }
                             }
-                        }
+                        } catch {}
+                        return { key, rows, address, fromApi };
+                    }));
 
+                    // 순차 DB 처리
+                    let batchHadApiCall = false;
+                    for (const { key, rows, address, fromApi } of fetchResults) {
+                        wDone++;
                         if (address) {
+                            if (fromApi) {
+                                batchHadApiCall = true;
+                                stats.apiCallCount++;
+                                await upsertCache(client, key, address).catch(() => {});
+                            }
                             const updated = await bulkUpdateByIds(
                                 client,
                                 rows.map((r) => r.assetId),
@@ -325,11 +355,9 @@ async function runWorker(mode = 'new', log, target = 'all') {
                             stats.worldUpdated += updated;
                             stats.totalUpdated += updated;
                         }
-                    } catch {
-                        // 개별 그룹 에러 무시
                     }
 
-                    if (address) await sleep(config.delay);
+                    if (batchHadApiCall) await sleep(config.delay);
 
                     if (wDone % API_TRACK_LOG_INTERVAL === 0 || wDone === worldGroups.size) {
                         log(`🌍 세계: ${wDone}/${worldGroups.size}그룹 (반영: ${stats.worldUpdated})`);
