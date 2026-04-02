@@ -37,6 +37,7 @@ function startServer() {
                 includeBuildingName: config.includeBuildingName,
                 googleLanguage: config.googleLanguage,
                 hasNaverKey: !!config.naverId,
+                hasKakaoKey: !!config.kakaoApiKey,
                 hasGoogleKey: !!config.googleApiKey,
                 hasHereKey: !!config.hereApiKey,
                 hasPhotonUrl: !!config.photonUrl,
@@ -124,12 +125,13 @@ function startServer() {
     let healthCache = null;
 
     async function runHealthCheck() {
-        const { fetchNaver, fetchGoogle, fetchHere, fetchPhoton } = require('./geocoder');
+        const { fetchNaver, fetchKakao, fetchGoogle, fetchHere, fetchPhoton } = require('./geocoder');
         const { createClient } = require('./db');
 
         const result = {
             db:     { ok: false, detail: '' },
             naver:  { ok: null,  detail: '키 미설정' },
+            kakao:  { ok: null,  detail: '키 미설정' },
             google: { ok: null,  detail: '키 미설정' },
             here:   { ok: null,  detail: '키 미설정' },
             photon: { ok: null,  detail: 'URL 미설정' },
@@ -155,6 +157,17 @@ function startServer() {
                     : { ok: false, detail: '응답 없음 (키 오류)' };
             } catch (e) {
                 result.naver = { ok: false, detail: e.message };
+            }
+        }
+
+        if (config.kakaoApiKey) {
+            try {
+                const addr = await fetchKakao(TEST_LAT, TEST_LON);
+                result.kakao = addr?.state
+                    ? { ok: true,  detail: addr.state }
+                    : { ok: false, detail: '응답 없음 (키 오류)' };
+            } catch (e) {
+                result.kakao = { ok: false, detail: e.message };
             }
         }
 
@@ -202,7 +215,7 @@ function startServer() {
 
     // API 테스트 (위도/경도 입력 → 주소 반환)
     app.get('/api/test-geocode', async (req, res) => {
-        const { fetchNaver, fetchGoogle, fetchHere, fetchPhoton } = require('./geocoder');
+        const { fetchNaver, fetchKakao, fetchGoogle, fetchHere, fetchPhoton } = require('./geocoder');
         const lat = parseFloat(req.query.lat);
         const lon = parseFloat(req.query.lon);
         const provider = req.query.provider;
@@ -214,6 +227,7 @@ function startServer() {
         try {
             let result = null;
             if (provider === 'naver') result = await fetchNaver(lat, lon);
+            else if (provider === 'kakao') result = await fetchKakao(lat, lon);
             else if (provider === 'google') result = await fetchGoogle(lat, lon);
             else if (provider === 'here') result = await fetchHere(lat, lon);
             else if (provider === 'photon') result = await fetchPhoton(lat, lon);
@@ -239,7 +253,7 @@ function startServer() {
             }
 
             if (geocodingKorea !== undefined) {
-                const valid = ['naver', 'google', 'here', 'photon', 'disabled'];
+                const valid = ['naver', 'kakao', 'google', 'here', 'photon', 'disabled'];
                 if (!valid.includes(geocodingKorea)) {
                     return res.status(400).json({ error: '유효하지 않은 한국 제공자 값' });
                 }

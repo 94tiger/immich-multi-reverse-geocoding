@@ -23,7 +23,7 @@
       <h1 class="text-2xl font-bold text-white flex items-center gap-2">
         <span>📍</span> Immich Reverse Geocoding
       </h1>
-      <p class="text-gray-500 text-sm mt-1">역지오코딩 관리 대시보드 (Naver · Google · HERE · Photon)</p>
+      <p class="text-gray-500 text-sm mt-1">역지오코딩 관리 대시보드 (Naver · Kakao · Google · HERE · Photon)</p>
     </div>
     <div class="flex items-center gap-3">
       <a href="https://github.com/94tiger/immich-multi-reverse-geocoding" target="_blank" rel="noopener"
@@ -91,6 +91,7 @@
     <div class="flex flex-wrap gap-3">
       <div id="health-db"     class="health-badge">DB <span class="health-dot">…</span></div>
       <div id="health-naver"  class="health-badge cursor-pointer select-none" onclick="openGeoTest('naver')"  title="클릭하여 테스트">Naver <span class="health-dot">…</span></div>
+      <div id="health-kakao"  class="health-badge cursor-pointer select-none" onclick="openGeoTest('kakao')"  title="클릭하여 테스트">Kakao <span class="health-dot">…</span></div>
       <div id="health-google" class="health-badge cursor-pointer select-none" onclick="openGeoTest('google')" title="클릭하여 테스트">Google <span class="health-dot">…</span></div>
       <div id="health-here"   class="health-badge cursor-pointer select-none" onclick="openGeoTest('here')"   title="클릭하여 테스트">HERE <span class="health-dot">…</span></div>
       <div id="health-photon" class="health-badge cursor-pointer select-none" onclick="openGeoTest('photon')" title="클릭하여 테스트">Photon <span class="health-dot">…</span></div>
@@ -207,6 +208,7 @@
           <select id="sel-korea"
             class="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none">
             <option value="naver">Naver Maps API (한국어, 권장)</option>
+            <option value="kakao">Kakao Maps API (한국어)</option>
             <option value="google">Google Maps API</option>
             <option value="here">HERE Geocoding API</option>
             <option value="photon">Photon (자체 호스팅)</option>
@@ -228,6 +230,7 @@
       <!-- API 키 상태 -->
       <div id="key-status" class="flex flex-wrap gap-3 mb-3 text-xs">
         <span id="naver-key-badge" class="px-2 py-1 rounded-md">Naver 키: 확인 중</span>
+        <span id="kakao-key-badge" class="px-2 py-1 rounded-md">Kakao 키: 확인 중</span>
         <span id="google-key-badge" class="px-2 py-1 rounded-md">Google 키: 확인 중</span>
         <span id="here-key-badge" class="px-2 py-1 rounded-md">HERE 키: 확인 중</span>
         <span id="photon-url-badge" class="px-2 py-1 rounded-md">Photon URL: 확인 중</span>
@@ -605,6 +608,7 @@ function updateStatus(data) {
 
   // API 키 뱃지
   const naverBadge   = document.getElementById('naver-key-badge');
+  const kakaoBadge   = document.getElementById('kakao-key-badge');
   const googleBadge  = document.getElementById('google-key-badge');
   const hereBadge    = document.getElementById('here-key-badge');
   const photonBadge  = document.getElementById('photon-url-badge');
@@ -614,6 +618,13 @@ function updateStatus(data) {
   } else {
     naverBadge.className  = 'px-2 py-1 rounded-md bg-red-900/50 text-red-400';
     naverBadge.textContent = 'Naver 키: ✗ 없음';
+  }
+  if (data.providers?.hasKakaoKey) {
+    kakaoBadge.className  = 'px-2 py-1 rounded-md bg-green-900/50 text-green-400';
+    kakaoBadge.textContent = 'Kakao 키: ✓ 설정됨';
+  } else {
+    kakaoBadge.className  = 'px-2 py-1 rounded-md bg-gray-800 text-gray-500';
+    kakaoBadge.textContent = 'Kakao 키: 미설정';
   }
   if (data.providers?.hasGoogleKey) {
     googleBadge.className  = 'px-2 py-1 rounded-md bg-green-900/50 text-green-400';
@@ -832,6 +843,7 @@ function updateHealth(data) {
 
   setHealthBadge('health-db',     data.db);
   setHealthBadge('health-naver',  data.naver);
+  setHealthBadge('health-kakao',  data.kakao);
   setHealthBadge('health-google', data.google);
   setHealthBadge('health-here',   data.here);
   setHealthBadge('health-photon', data.photon);
@@ -895,7 +907,7 @@ async function runGeoTest() {
 
 function setHealthBadge(id, item) {
   const el = document.getElementById(id);
-  const label = { 'health-db': 'DB', 'health-naver': 'Naver', 'health-google': 'Google', 'health-here': 'HERE', 'health-photon': 'Photon' }[id];
+  const label = { 'health-db': 'DB', 'health-naver': 'Naver', 'health-kakao': 'Kakao', 'health-google': 'Google', 'health-here': 'HERE', 'health-photon': 'Photon' }[id];
 
   if (item.ok === null) {
     el.className = 'health-badge px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-500';

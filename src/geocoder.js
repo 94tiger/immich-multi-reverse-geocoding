@@ -195,19 +195,52 @@ async function fetchPhoton(lat, lon) {
     };
 }
 
+async function fetchKakao(lat, lon) {
+    if (!config.kakaoApiKey) return null;
+
+    const url = `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lon}&y=${lat}`;
+    const parsed = await httpGet(
+        url,
+        { headers: { Authorization: `KakaoAK ${config.kakaoApiKey}` } },
+        config.kakaoTimeoutMs,
+    );
+
+    if (!parsed || !parsed.documents?.length) return null;
+
+    const doc = parsed.documents[0];
+    const addr = doc.address;
+    if (!addr) return null;
+
+    const stateName = addr.region_1depth_name || '';
+    const cityParts = [addr.region_2depth_name, addr.region_3depth_name].filter(
+        (p) => p && p.trim(),
+    );
+    let cityName = cityParts.join(' ');
+
+    if (config.includeBuildingName) {
+        const building = doc.road_address?.building_name?.trim();
+        if (building && building.length >= 2 && isNaN(Number(building))) {
+            cityName = `${cityName} (${building})`.trim();
+        }
+    }
+
+    return { country: '대한민국', state: stateName, city: cityName };
+}
+
 async function fetchAddress(lat, lon) {
     if (isKorean(lat, lon)) {
-        if (config.geocodingKorea === 'naver') return fetchNaver(lat, lon);
+        if (config.geocodingKorea === 'naver')  return fetchNaver(lat, lon);
+        if (config.geocodingKorea === 'kakao')  return fetchKakao(lat, lon);
         if (config.geocodingKorea === 'google') return fetchGoogle(lat, lon);
-        if (config.geocodingKorea === 'here') return fetchHere(lat, lon);
+        if (config.geocodingKorea === 'here')   return fetchHere(lat, lon);
         if (config.geocodingKorea === 'photon') return fetchPhoton(lat, lon);
         return null;
     } else {
         if (config.geocodingWorld === 'google') return fetchGoogle(lat, lon);
-        if (config.geocodingWorld === 'here') return fetchHere(lat, lon);
+        if (config.geocodingWorld === 'here')   return fetchHere(lat, lon);
         if (config.geocodingWorld === 'photon') return fetchPhoton(lat, lon);
         return null;
     }
 }
 
-module.exports = { fetchAddress, fetchNaver, fetchGoogle, fetchHere, fetchPhoton, isKorean };
+module.exports = { fetchAddress, fetchNaver, fetchKakao, fetchGoogle, fetchHere, fetchPhoton, isKorean };

@@ -38,6 +38,10 @@ const config = {
     naverSecret: env('NAVER_CLIENT_SECRET'),
     naverTimeoutMs: parseInt(env('NAVER_API_TIMEOUT_MS', '10000'), 10),
 
+    // Kakao Maps API
+    kakaoApiKey: env('KAKAO_API_KEY'),
+    kakaoTimeoutMs: parseInt(env('KAKAO_API_TIMEOUT_MS', '10000'), 10),
+
     // Google Maps API
     googleApiKey: env('GOOGLE_API_KEY'),
     googleTimeoutMs: parseInt(env('GOOGLE_API_TIMEOUT_MS', '10000'), 10),
