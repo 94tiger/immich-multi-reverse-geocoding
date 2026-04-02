@@ -43,7 +43,7 @@ function httpGet(url, options, timeoutMs) {
 async function fetchNaver(lat, lon) {
     if (!config.naverId || !config.naverSecret) return null;
 
-    const url = `https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc?coords=${lon},${lat}&output=json&orders=admcode,roadaddr,addr`;
+    const url = `https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc?coords=${lon},${lat}&output=json&orders=legalcode,roadaddr,addr`;
     const parsed = await httpGet(
         url,
         {
@@ -59,7 +59,7 @@ async function fetchNaver(lat, lon) {
         return null;
     }
 
-    const admResult = parsed.results.find((r) => r.name === 'admcode') || parsed.results[0];
+    const admResult = parsed.results.find((r) => r.name === 'legalcode') || parsed.results[0];
     const region = admResult.region;
 
     const stateName = region.area1?.name || '';
