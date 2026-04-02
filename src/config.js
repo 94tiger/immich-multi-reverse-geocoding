@@ -43,6 +43,14 @@ const config = {
     googleTimeoutMs: parseInt(env('GOOGLE_API_TIMEOUT_MS', '10000'), 10),
     googleLanguage: runtimeOverride.googleLanguage || env('GOOGLE_LANGUAGE', 'ko'),
 
+    // HERE Geocoding API
+    hereApiKey: env('HERE_API_KEY'),
+    hereTimeoutMs: parseInt(env('HERE_API_TIMEOUT_MS', '10000'), 10),
+
+    // Photon (자체 호스팅 OSM 역지오코딩)
+    photonUrl: env('PHOTON_URL'),
+    photonTimeoutMs: parseInt(env('PHOTON_API_TIMEOUT_MS', '10000'), 10),
+
     // Immich PostgreSQL
     db: {
         user: env('DB_USERNAME', 'postgres'),

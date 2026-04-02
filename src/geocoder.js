@@ -1,5 +1,6 @@
 'use strict';
 const https = require('https');
+const http = require('http');
 const config = require('./config');
 
 function isKorean(lat, lon) {
@@ -16,7 +17,8 @@ function httpGet(url, options, timeoutMs) {
             }
         };
 
-        const req = https.get(url, options || {}, (res) => {
+        const lib = url.startsWith('https://') ? https : http;
+        const req = lib.get(url, options || {}, (res) => {
             let data = '';
             res.on('data', (c) => (data += c));
             res.on('end', () => {
@@ -123,15 +125,89 @@ async function fetchGoogle(lat, lon) {
     };
 }
 
+async function fetchHere(lat, lon) {
+    if (!config.hereApiKey) return null;
+
+    const url = `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lon}&lang=ko&apiKey=${config.hereApiKey}`;
+    const parsed = await httpGet(url, {}, config.hereTimeoutMs);
+
+    if (!parsed || !parsed.items?.length) return null;
+
+    const item = parsed.items[0];
+    const addr = item.address;
+
+    const country = addr.countryName || null;
+    const countryCode = addr.countryCode || null; // ISO 3166-1 alpha-3
+    const state = addr.state || addr.county || null;
+    const cityParts = [
+        addr.city,
+        addr.district,
+    ].filter(Boolean)
+     .filter((v, i, arr) => arr.indexOf(v) === i)
+     .filter(v => v !== state);
+
+    return {
+        country,
+        countryCode,
+        state,
+        city: cityParts.join(' ') || null,
+    };
+}
+
+async function fetchPhoton(lat, lon) {
+    if (!config.photonUrl) return null;
+
+    const url = `${config.photonUrl}/reverse?lat=${lat}&lon=${lon}`;
+    const parsed = await httpGet(url, {}, config.photonTimeoutMs);
+
+    if (!parsed || !parsed.features?.length) return null;
+
+    const props = parsed.features[0].properties;
+    const country = props.country || null;
+    const countryCode = props.countrycode || null;
+    let state = props.state || null;
+    let city = props.city || null;
+
+    // 한국 특별시/광역시/특별자치시: state가 없고 city 또는 name에 광역 단위명이 있으면 state로 승격
+    // 예) city="서울특별시" → state="서울특별시", city=null (district가 city 역할)
+    // 예) 세종처럼 city=null, name="세종특별자치시" → state="세종특별자치시"
+    if (countryCode === 'KR' && !state) {
+        const candidate = city || (!props.county && !props.district ? props.name : null);
+        if (candidate && /특별시$|광역시$|특별자치시$/.test(candidate)) {
+            state = candidate;
+            city = null;
+        }
+    }
+
+    const cityParts = [
+        props.county,   // 군/구 (KR), 지청 (JP) 등
+        city,
+        props.district,
+    ].filter(Boolean)
+     .filter((v, i, arr) => arr.indexOf(v) === i)
+     .filter(v => v !== state);
+
+    return {
+        country,
+        countryCode,
+        state,
+        city: cityParts.join(' ') || null,
+    };
+}
+
 async function fetchAddress(lat, lon) {
     if (isKorean(lat, lon)) {
-        if (config.geocodingKorea === 'google') return fetchGoogle(lat, lon);
         if (config.geocodingKorea === 'naver') return fetchNaver(lat, lon);
+        if (config.geocodingKorea === 'google') return fetchGoogle(lat, lon);
+        if (config.geocodingKorea === 'here') return fetchHere(lat, lon);
+        if (config.geocodingKorea === 'photon') return fetchPhoton(lat, lon);
         return null;
     } else {
         if (config.geocodingWorld === 'google') return fetchGoogle(lat, lon);
+        if (config.geocodingWorld === 'here') return fetchHere(lat, lon);
+        if (config.geocodingWorld === 'photon') return fetchPhoton(lat, lon);
         return null;
     }
 }
 
-module.exports = { fetchAddress, fetchNaver, fetchGoogle, isKorean };
+module.exports = { fetchAddress, fetchNaver, fetchGoogle, fetchHere, fetchPhoton, isKorean };
