@@ -50,6 +50,9 @@ function startServer() {
         const { triggerRun } = require('./scheduler');
         const mode = ['new', 'untranslated', 'all'].includes(req.body.mode) ? req.body.mode : 'new';
         const target = ['all', 'korea', 'world'].includes(req.body.target) ? req.body.target : 'all';
+        const modeLabel = { new: '미입력만', untranslated: '미번역 포함', all: '전체 재처리' }[mode];
+        const targetLabel = { all: '전체', korea: '한국', world: '세계' }[target];
+        state.addLog(`[웹 UI] 수동 실행 요청 — ${targetLabel} / ${modeLabel}`);
         const result = await triggerRun(mode, target);
         res.json(result);
     });
@@ -118,6 +121,8 @@ function startServer() {
                 sql = `DELETE FROM geocoding.geocode_cache`;
             }
             const result = await client.query(sql);
+            const targetLabel = { korea: '한국', world: '세계', all: '전체' }[target];
+            state.addLog(`[웹 UI] ${targetLabel} 캐시 초기화 — ${result.rowCount}건 삭제`);
             res.json({ deleted: result.rowCount });
         } catch (e) {
             console.error('[캐시 삭제 오류]', e.message);
@@ -149,6 +154,10 @@ function startServer() {
         }
 
         config.saveRuntime(toSave);
+        const parts = [];
+        if (toSave.filterUserIds !== undefined) parts.push(`사용자 필터 ${toSave.filterUserIds.length}명`);
+        if (toSave.filterPathPrefixes !== undefined) parts.push(`경로 필터 ${toSave.filterPathPrefixes.length}개`);
+        state.addLog(`[웹 UI] 필터 저장 — ${parts.join(', ') || '전체 대상'}`);
         res.json({ success: true });
     });
 
@@ -320,6 +329,13 @@ function startServer() {
 
             if (Object.keys(toSave).length > 0) {
                 config.saveRuntime(toSave);
+                const parts = [];
+                if (toSave.cronSchedule !== undefined) parts.push(`스케줄: ${toSave.cronSchedule}`);
+                if (toSave.geocodingKorea !== undefined) parts.push(`한국: ${toSave.geocodingKorea}`);
+                if (toSave.geocodingWorld !== undefined) parts.push(`세계: ${toSave.geocodingWorld}`);
+                if (toSave.includeBuildingName !== undefined) parts.push(`건물명: ${toSave.includeBuildingName ? 'ON' : 'OFF'}`);
+                if (toSave.googleLanguage !== undefined) parts.push(`언어: ${toSave.googleLanguage}`);
+                state.addLog(`[웹 UI] 설정 저장 — ${parts.join(', ')}`);
             }
 
             res.json({ success: true });
