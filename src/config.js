@@ -59,6 +59,7 @@ const config = {
     // 기타
     delay: parseInt(env('STEP_DELAY_MS', '100'), 10),
     cacheTtlDays: parseInt(env('CACHE_TTL_DAYS', '180'), 10),
+    parallelLimit: parseInt(env('PARALLEL_LIMIT', '1'), 10),
 };
 
 config.saveRuntime = function (overrides) {
