@@ -128,7 +128,7 @@ async function runWorker(mode = 'new', log, target = 'all') {
                 ${needsJoin ? 'INNER JOIN public.asset a ON a.id = ae."assetId"' : ''}
                 WHERE ae.latitude BETWEEN 33 AND 43
                   AND ae.longitude BETWEEN 124 AND 132
-                  AND ae.country IN ('South Korea', '대한민국', 'Korea')
+                  AND (ae.country IN ('South Korea', '대한민국', 'Korea') OR ae.country IS NULL)
                   ${needsJoin ? 'AND a."deletedAt" IS NULL' : ''}
             `;
             if (mode === 'new') {
