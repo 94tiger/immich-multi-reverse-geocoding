@@ -56,7 +56,7 @@ async function ensureCacheTable(client) {
         await client.query(`
             INSERT INTO geocoding.geocode_cache (cache_key, country, state, city, updated_at)
             SELECT cache_key,
-                   COALESCE(country, '대한민국'),
+                   '대한민국',
                    state,
                    city,
                    updated_at
