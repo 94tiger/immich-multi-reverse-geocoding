@@ -78,7 +78,8 @@ async function warmUpCache(client, memCache, ttlDays) {
     );
     for (const row of res.rows) {
         // Google 결과(country_code 있음): 현재 로직으로 city 재조합
-        const city = row.country_code ? assembleCityFromComponents(row) : row.city;
+        const hasComponents = row.level2 || row.locality || row.sublocality1;
+        const city = hasComponents ? assembleCityFromComponents(row) : row.city;
         memCache.set(row.cache_key, { country: row.country, state: row.state, city });
     }
     return res.rows.length;

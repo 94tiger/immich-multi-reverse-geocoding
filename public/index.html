@@ -26,6 +26,7 @@
       <p class="text-gray-500 text-sm mt-1">역지오코딩 관리 대시보드 (Naver · Kakao · Google · HERE · Photon)</p>
     </div>
     <div class="flex items-center gap-3">
+      <span id="app-version" class="text-gray-600 text-xs font-mono"></span>
       <a href="https://github.com/94tiger/immich-multi-reverse-geocoding" target="_blank" rel="noopener"
          class="text-gray-500 hover:text-white transition-colors" title="GitHub">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -571,6 +572,12 @@ async function saveProviders() {
 
 // ── UI 업데이트 ───────────────────────────────────────────────
 function updateStatus(data) {
+  // 버전
+  if (data.version) {
+    const el = document.getElementById('app-version');
+    if (el && !el.textContent) el.textContent = `v${data.version}`;
+  }
+
   // 상태 뱃지
   const badge = document.getElementById('status-badge');
   const indicator = document.getElementById('run-indicator');

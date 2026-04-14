@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const config = require('./config');
 const state = require('./state');
+const { version } = require('../package.json');
 
 function startServer() {
     const app = express();
@@ -24,6 +25,7 @@ function startServer() {
     // 현재 상태
     app.get('/api/status', (req, res) => {
         res.json({
+            version,
             isRunning: state.isRunning,
             currentRunMode: state.currentRunMode,
             currentRunTarget: state.currentRunTarget,
