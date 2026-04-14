@@ -39,7 +39,10 @@ async function ensureCacheTable(client) {
         )
     `);
 
-    // 기존 테이블에 컴포넌트 컬럼 추가 (이미 있으면 무시)
+    // 기존 테이블에 컬럼 추가 (이미 있으면 무시)
+    await client.query(`ALTER TABLE geocoding.geocode_cache ADD COLUMN IF NOT EXISTS country VARCHAR`);
+    await client.query(`ALTER TABLE geocoding.geocode_cache ADD COLUMN IF NOT EXISTS state VARCHAR`);
+    await client.query(`ALTER TABLE geocoding.geocode_cache ADD COLUMN IF NOT EXISTS city VARCHAR`);
     await client.query(`ALTER TABLE geocoding.geocode_cache ADD COLUMN IF NOT EXISTS country_code VARCHAR`);
     await client.query(`ALTER TABLE geocoding.geocode_cache ADD COLUMN IF NOT EXISTS level2 VARCHAR`);
     await client.query(`ALTER TABLE geocoding.geocode_cache ADD COLUMN IF NOT EXISTS locality VARCHAR`);
